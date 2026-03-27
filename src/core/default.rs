@@ -1,17 +1,16 @@
 use std::io::{self, Error, ErrorKind};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use azalea_core::direction::Direction;
 use azalea_core::position::{BlockPos, Vec3};
 use azalea_entity::LookDirection;
 use azalea_protocol::common::movements::MoveFlags;
-use azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate;
 use azalea_protocol::packets::game::s_player_action::Action;
 use azalea_protocol::packets::game::{
-  ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundChat, ServerboundClientCommand, ServerboundGamePacket, ServerboundKeepAlive, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem
+  ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundClientCommand, ServerboundGamePacket, ServerboundKeepAlive, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem
 };
 
 use crate::core::bot::{Bot, BotCommand};
+use crate::core::data::{Entity, PlayerInfo};
 use crate::core::events::BotEvent;
 
 /// Дефолтный обработчик пакетов.
@@ -32,15 +31,38 @@ pub fn default_command_processor(
 
 /// Функция обработки пакета (в состоянии Play).
 async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Result<bool> {
-  bot.emit_event(BotEvent::Packet(&packet));
-
   let Some(conn) = &mut bot.connection else {
-    return Ok(true);
+    return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", bot.username)));
   };
 
   match packet {
+    ClientboundGamePacket::AddEntity(p) => {
+      let storage = &mut bot.storage;
+
+      let entity = Entity {
+        entity_type: p.entity_type.to_string(),
+        uuid: p.uuid,
+        position: p.position,
+        velocity: Vec3::ZERO,
+        look_direction: LookDirection::new(p.y_rot.into(), p.x_rot.into()),
+        on_ground: false,
+        player_info: None
+      };
+
+      storage.entities.insert(p.id.0, entity);
+    }
+    ClientboundGamePacket::RemoveEntities(p) => {
+      let storage = &mut bot.storage;
+
+      for entity_id in p.entity_ids {
+        storage.entities.remove(&entity_id.0);
+      }
+    }
     ClientboundGamePacket::Login(p) => {
-      bot.entity_id = Some(p.player_id.0);
+      let profile = &mut bot.components.profile;
+
+      profile.entity_id = Some(p.player_id.0);
+      profile.game_mode = p.common.game_type.name().to_string();
 
       if p.show_death_screen && bot.plugins.auto_respawn.enabled {
         conn
@@ -54,20 +76,40 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 
       bot.emit_event(BotEvent::Spawn);
     }
+    ClientboundGamePacket::PlayerInfoUpdate(p) => {
+      let profile = &mut bot.components.profile;
+
+      for entry in p.entries {
+        if entry.profile.name == bot.username {
+          profile.ping = entry.latency;
+        
+          if let Some(name) = entry.display_name {
+            profile.display_name = Some(name.to_string());
+          }
+        } else {
+          let storage = &mut bot.storage;
+
+          for (_id, entity) in &mut storage.entities {
+            if entity.uuid != entry.profile.uuid {
+              continue;
+            }
+
+            let player_info = PlayerInfo {
+              username: entry.profile.name.clone(),
+              game_mode: entry.game_mode.name().to_string(),
+              ping: entry.latency
+            };
+
+            entity.player_info = Some(player_info);
+          }
+        }
+      }
+    }
     ClientboundGamePacket::SetHealth(p) => {
       let state = &mut bot.components.state;
       state.health = p.health;
       state.satiety = p.food;
       state.saturation = p.saturation;
-    }
-    ClientboundGamePacket::MoveEntityPos(p) => {
-      if !bot.is_this_my_entity_id(p.entity_id.0) {
-        return Ok(true);
-      }
-
-      let physics = &mut bot.components.physics;
-
-      physics.on_ground = p.on_ground;
     }
     ClientboundGamePacket::PlayerRotation(p) => {
       bot.components.physics.look_direction = LookDirection::new(p.y_rot, p.x_rot);
@@ -87,11 +129,22 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
     }
     ClientboundGamePacket::SetEntityMotion(p) => {
       if !bot.is_this_my_entity_id(p.id.0) {
-        return Ok(true);
+        if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
+          entity.velocity = p.delta.to_vec3();
+        }
       }
 
       let physics = &mut bot.components.physics;
-      physics.velocity = p.delta.into();
+
+      physics.velocity = p.delta.to_vec3();
+    }
+    ClientboundGamePacket::EntityPositionSync(p) => {
+      if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
+        entity.position = p.values.pos;
+        entity.velocity = p.values.delta;
+        entity.look_direction = p.values.look_direction;
+        entity.on_ground = p.on_ground;
+      }
     }
     ClientboundGamePacket::KeepAlive(p) => {
       conn
@@ -145,27 +198,12 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 /// Функция обработки внешней команды.
 async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
-    return Ok(true);
+    return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", bot.username)));
   };
 
   match command {
     BotCommand::Chat(message) => {
-      let start = SystemTime::now();
-      let duration = start.duration_since(UNIX_EPOCH);
-      let timestamp = match duration {
-        Ok(d) => d.as_secs(),
-        Err(_) => 0,
-      };
-
-      conn
-        .write(ServerboundGamePacket::Chat(ServerboundChat {
-          message: message,
-          timestamp: timestamp,
-          salt: 0,
-          signature: None,
-          last_seen_messages: LastSeenMessagesUpdate::default(),
-        }))
-        .await?;
+      bot.chat(message).await?;
     }
     BotCommand::SetDirection { yaw, pitch } => {
       conn
@@ -223,6 +261,9 @@ async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool>
       bot.disconnect().await?;
       bot.emit_event(BotEvent::Disconnect);
       return Ok(false);
+    }
+    BotCommand::Reconnect { server_host, server_port, interval } => {
+      bot.reconnect(&server_host, server_port, interval).await?;
     }
   }
 

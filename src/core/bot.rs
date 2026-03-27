@@ -3,19 +3,24 @@
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use azalea_protocol::common::client_information::{ClientInformation, ParticleStatus};
 use azalea_protocol::connect::Connection;
+use azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate;
 use azalea_protocol::packets::game::s_interact::InteractionHand;
-use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundGamePacket};
+use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundChat, ServerboundGamePacket};
 use azalea_protocol::packets::handshake::s_intention::ServerboundIntention;
 use azalea_protocol::packets::login::s_hello::ServerboundHello;
 use azalea_protocol::packets::login::s_login_acknowledged::ServerboundLoginAcknowledged;
 use azalea_protocol::packets::{ClientIntention, PROTOCOL_VERSION};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::core::components::{Physics, State};
+use crate::core::components::{Physics, Profile, State};
+use crate::core::data::Storage;
 use crate::core::default::{default_command_processor, default_packet_processor};
 use crate::core::events::BotEvent;
 use crate::core::handler::{handle_configuration, handle_login};
@@ -45,6 +50,7 @@ pub enum BotCommand {
   ReleaseUseItem,
   SendPacket(ServerboundGamePacket),
   Disconnect,
+  Reconnect { server_host: String, server_port: u16, interval: u64 }
 }
 
 #[derive(Clone)]
@@ -54,28 +60,58 @@ pub struct BotTerminal {
 }
 
 impl BotTerminal {
+  /// Метод отправки команды в терминал.
   pub async fn send(&self, command: BotCommand) {
     let _ = self.cmd.send(command).await;
+  }
+
+  /// Вспомогательный метод отправки команды Chat в терминал.
+  pub async fn chat(&self, message: impl Into<String>) {
+    self.send(BotCommand::Chat(message.into())).await;
+  }
+
+  /// Вспомогательный метод отправки команды Disconnect в терминал.
+  pub async fn disconnect(&self) {
+    self.send(BotCommand::Disconnect).await;
+  }
+
+  /// Вспомогательный метод отправки команды Disconnect в терминал.
+  pub async fn reconnect(&self, server_host: impl Into<String>, server_port: u16, interval: u64) {
+    self.send(BotCommand::Reconnect { 
+      server_host: server_host.into(), 
+      server_port, 
+      interval 
+    }).await;
   }
 }
 
 pub struct Bot {
+  pub status: BotStatus,
   pub username: String,
   pub uuid: Uuid,
   pub connection: Option<Connection<ClientboundGamePacket, ServerboundGamePacket>>,
-  pub command_receiver: mpsc::Receiver<BotCommand>,
-  pub entity_id: Option<i32>,
   pub components: BotComponents,
   pub plugins: BotPlugins,
+  pub storage: Storage,
+  client_information: ClientInformation,
+  command_receiver: mpsc::Receiver<BotCommand>,
   packet_processor: PacketProcessorFn,
   command_processor: CommandProcessorFn,
   event_listener: Option<EventListenerFn>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum BotStatus {
+  Offline,
+  Connecting,
+  Online
 }
 
 #[derive(Debug)]
 pub struct BotComponents {
   pub physics: Physics,
   pub state: State,
+  pub profile: Profile
 }
 
 #[derive(Debug)]
@@ -115,20 +151,26 @@ pub struct PhysicsPlugin {
 }
 
 impl Bot {
-  pub fn new(username: &str, uuid: Uuid) -> (Self, BotTerminal) {
+  pub fn new(username: &str) -> (Self, BotTerminal) {
     let (sender, receiver) = mpsc::channel(100);
 
     let bot = Self {
+      status: BotStatus::Offline,
       username: username.to_string(),
-      uuid,
+      uuid: Uuid::nil(),
       connection: None,
-      command_receiver: receiver,
-      entity_id: None,
+      storage: Storage::default(),
       components: BotComponents {
         physics: Physics::default(),
         state: State::default(),
+        profile: Profile::default()
       },
       plugins: BotPlugins::default(),
+      client_information: ClientInformation {
+        particle_status: ParticleStatus::Minimal,
+        ..Default::default()
+      },
+      command_receiver: receiver,
       packet_processor: default_packet_processor,
       command_processor: default_command_processor,
       event_listener: None,
@@ -140,6 +182,28 @@ impl Bot {
     };
     
     (bot, terminal)
+  }
+
+  /// Метод запуска бота, который возвращает JoinHandle и не блокирует поток.
+  pub fn spawn(mut self, server_host: &str, server_port: u16) -> JoinHandle<io::Result<()>> {
+    let host = server_host.to_string();
+    let port = server_port;
+    
+    tokio::spawn(async move {
+      self.connect_to(&host, port).await
+    })
+  }
+
+  /// Метод установки UUID.
+  pub fn set_uuid(mut self, uuid: Uuid) -> Self {
+    self.uuid = uuid;
+    self
+  }
+
+  /// Метод установки информации клиента.
+  pub fn set_information(mut self, information: ClientInformation) -> Self {
+    self.client_information = information;
+    self
   }
 
   /// Метод установки плагинов бота.
@@ -206,6 +270,8 @@ impl Bot {
       }
     };
 
+    self.status = BotStatus::Connecting;
+
     conn
       .write(ServerboundIntention {
         protocol_version: PROTOCOL_VERSION,
@@ -229,12 +295,14 @@ impl Bot {
     self.emit_event(BotEvent::LoginFinished);
 
     let mut conn = conn.config();
-    handle_configuration(&mut conn).await?;
+    handle_configuration(&mut conn, self.client_information.clone()).await?;
 
     self.emit_event(BotEvent::ConfigurationFinished);
 
     let conn = conn.game();
     self.connection = Some(conn);
+
+    self.status = BotStatus::Online;
 
     self.event_loop().await?;
 
@@ -251,8 +319,11 @@ impl Bot {
         Err(err) => match err.kind() {
           ErrorKind::ConnectionRefused
           | ErrorKind::ConnectionReset
-          | ErrorKind::ConnectionAborted => {
+          | ErrorKind::ConnectionAborted 
+          | ErrorKind::NotConnected => {
             self.emit_event(BotEvent::Disconnect);
+
+            self.status = BotStatus::Offline;
 
             if self.plugins.auto_reconnect.enabled {
               sleep(self.plugins.auto_reconnect.reconnect_delay).await;
@@ -276,12 +347,18 @@ impl Bot {
     tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
+      if self.status != BotStatus::Online {
+        return Ok(());
+      }
+
       let Some(conn) = &mut self.connection else {
         continue;
       };
 
       tokio::select! {
         Ok(packet) = conn.read() => {
+          self.emit_event(BotEvent::Packet(&packet));
+
           match (self.packet_processor)(self, packet).await {
             Ok(true) => continue,
             Ok(false) => return Ok(()),
@@ -308,7 +385,7 @@ impl Bot {
 
   /// Метод проверки некого Entity ID на сходство с Entity ID текущего бота.
   pub fn is_this_my_entity_id(&self, id: i32) -> bool {
-    if let Some(entity_id) = self.entity_id {
+    if let Some(entity_id) = self.components.profile.entity_id {
       if id == entity_id {
         return true;
       }
@@ -320,7 +397,7 @@ impl Bot {
   /// Метод выполнения определённых операций в каждый физический тик.
   async fn tick(&mut self) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
-      return Ok(());
+      return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", self.username)));
     };
 
     if self.plugins.physics.enabled {
@@ -330,10 +407,15 @@ impl Bot {
     Ok(())
   }
 
+  /// Метод очистки данных бота.
+  pub fn clear(&mut self) {
+    self.storage.entities.clear();
+  }
+
   /// Метод закрытия TcpStream (отключение от сервера).
   pub async fn disconnect(&mut self) -> io::Result<()> {
     let Some(conn) = self.connection.take() else {
-      return Ok(());
+      return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", self.username)));
     };
 
     let mut stream = match conn.unwrap() {
@@ -352,6 +434,8 @@ impl Bot {
 
     stream.shutdown().await?;
 
+    self.clear();
+
     Ok(())
   }
 
@@ -360,6 +444,31 @@ impl Bot {
     self.disconnect().await?;
     sleep(interval).await;
     self.connect_to(server_host, server_port).await?;
+    Ok(())
+  }
+
+  pub async fn chat(&mut self, message: impl Into<String>) -> io::Result<()> {
+    let Some(conn) = &mut self.connection else {
+      return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", self.username)));
+    };
+
+    let start = SystemTime::now();
+    let duration = start.duration_since(UNIX_EPOCH);
+    let timestamp = match duration {
+      Ok(d) => d.as_secs(),
+      Err(_) => 0,
+    };
+
+    conn
+      .write(ServerboundGamePacket::Chat(ServerboundChat {
+        message: message.into(),
+        timestamp: timestamp,
+        salt: 0,
+        signature: None,
+        last_seen_messages: LastSeenMessagesUpdate::default(),
+      }))
+      .await?;
+
     Ok(())
   }
 }

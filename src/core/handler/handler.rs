@@ -1,5 +1,6 @@
 use std::io::{self, Error, ErrorKind};
 
+use azalea_protocol::common::client_information::ClientInformation;
 use azalea_protocol::connect::Connection;
 use azalea_protocol::packets::config::{ClientboundConfigPacket, ServerboundConfigPacket};
 use azalea_protocol::packets::login::{ClientboundLoginPacket, ServerboundLoginPacket};
@@ -57,33 +58,14 @@ pub async fn handle_login(
 /// Функция обработки всего цикла пакетов в состоянии Configuration.
 pub async fn handle_configuration(
   conn: &mut Connection<ClientboundConfigPacket, ServerboundConfigPacket>,
+  client_information: ClientInformation
 ) -> io::Result<()> {
-  use azalea_entity::HumanoidArm;
-  use azalea_protocol::common::client_information::*;
   use azalea_protocol::packets::config::*;
 
   conn
     .write(ServerboundConfigPacket::ClientInformation(
       s_client_information::ServerboundClientInformation {
-        information: ClientInformation {
-          language: "en_us".into(),
-          view_distance: 8,
-          chat_visibility: ChatVisibility::Full,
-          chat_colors: true,
-          model_customization: ModelCustomization {
-            cape: true,
-            jacket: true,
-            left_sleeve: true,
-            right_sleeve: true,
-            left_pants: true,
-            right_pants: true,
-            hat: true,
-          },
-          main_hand: HumanoidArm::Right,
-          text_filtering_enabled: false,
-          allows_listing: true,
-          particle_status: ParticleStatus::All,
-        },
+        information: client_information
       },
     ))
     .await?;

@@ -19,3 +19,4 @@ azalea-crypto = "0.15"
 azalea-entity = "0.15"
 azalea-core = "0.15"
 uuid = { version = "1", features = ["v4"] }
+hashbrown = "0.16.1"

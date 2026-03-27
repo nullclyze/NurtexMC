@@ -40,6 +40,10 @@ impl Physics {
     if !self.on_ground {
       self.velocity.y -= 0.08;
       self.velocity.y *= 0.98;
+    } else {
+      if self.velocity.y < 0.0 {
+        self.velocity.y = 0.0;
+      }
     }
   }
 
@@ -57,8 +61,8 @@ impl Physics {
     &mut self,
     conn: &mut Connection<ClientboundGamePacket, ServerboundGamePacket>,
   ) -> io::Result<()> {
-    self.apply_gravity();
     self.apply_velocity();
+    self.apply_gravity();
     self.apply_friction();
 
     let pos_delta = self.position - self.last_sent_position;

@@ -29,7 +29,7 @@ impl Swarm {
 
   /// Метод добавления бота в рой.
   pub fn add_bot(&mut self, username: &str, plugins: BotPlugins) {
-    let (mut bot, terminal) = Bot::new(username, Uuid::nil());
+    let (mut bot, terminal) = Bot::new(username);
 
     bot = bot.set_plugins(plugins);
 
@@ -50,19 +50,14 @@ impl Swarm {
   /// Метод, запускающий всех ботов из роя, который блокирует поток на время запуска.
   pub async fn launch_blocking(
     &mut self,
-    server_host: String,
+    server_host: &str,
     server_port: u16,
     join_delay: u64,
   ) {
     let bots = std::mem::take(&mut self.bots);
     
-    for mut bot in bots {
-      let host = server_host.clone();
-
-      self.handles.push(tokio::spawn(async move {
-        bot.connect_to(&host, server_port).await
-      }));
-
+    for bot in bots {
+      self.handles.push(bot.spawn(server_host, server_port));
       sleep(join_delay).await;
     }
   }
@@ -97,13 +92,13 @@ impl Swarm {
 }
 
 #[derive(Debug)]
-pub struct BotConfig {
+pub struct SwarmObject {
   pub username: String,
   pub uuid: Option<Uuid>,
   pub plugins: BotPlugins,
 }
 
-impl BotConfig {
+impl SwarmObject {
   pub fn new(username: String) -> Self {
     Self {
       username,
