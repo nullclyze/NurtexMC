@@ -19,30 +19,25 @@ nurtex = { git = "https://github.com/nullclyze/NurtexMC" }
 ```rust
 use std::io;
 
-use nurtex::create_bot;
-use nurtex::core::bot::BotPlugins;
-use nurtex::core::terminal::Command;
+use nurtex::core::bot::{Bot, BotCommand};
 use nurtex::utils::sleep;
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-  // Create a bot and its terminal.
-  let (mut bot, terminal) = create_bot("NurtexBot", BotPlugins::default());
+  // Creating a bot and its terminal.
+  let (mut bot, terminal) = Bot::new("NurtexBot", Uuid::nil());
 
-  // Connecting the bot to the server.
+  // Spawn an asynchronous task.
   tokio::spawn(async move {
-    let _ = bot.connect_to("localhost", 25565).await;
+    sleep(3000).await; // Wait for the bot to connect.
+    terminal.send(BotCommand::Chat("Hello, world!".to_string())).await; // Send a message to the chat.
+    sleep(5000).await; // Wait a little.
+    terminal.send(BotCommand::Disconnect).await; // Disconnect bot.
   });
 
-  sleep(3000).await; // Wait for the bot to connect.
-
-  // Send a message to the chat from the bot through the terminal.
-  terminal.send(Command::Chat("Hello, world!".to_string())).await;
-
-  sleep(5000).await; // Wait a little.
-
-  // Disconnect the bot.
-  terminal.send(Command::Disconnect).await;
+  // Connecting bot to the server.
+  bot.connect_to("localhost", 25565).await?;
 
   Ok(())
 }
@@ -54,39 +49,30 @@ async fn main() -> io::Result<()> {
 use std::io;
 
 use nurtex::{create_shared_swarm, launch_shared_swarm};
-use nurtex::core::swarm::SwarmObject;
-use nurtex::core::terminal::Command;
+use nurtex::core::bot::BotCommand;
+use nurtex::core::swarm::BotConfig;
 use nurtex::utils::sleep;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-  // Creating swarm objects.
-  let mut objects = Vec::new();
+  // Creating bot configs.
+  let mut configs = Vec::new();
 
-  for i in 0..5 {
-    let object = SwarmObject::new(format!("bot_{}", i));
-    objects.push(object);
+  for i in 0..4 {
+    let config = BotConfig::new(format!("bot_{}", i));
+    configs.push(config);
   }
 
-  // Creating a swarm and bots.
-  let (swarm, bots) = create_shared_swarm(objects);
+  // Creating a shared-swarm of bots.
+  let swarm = create_shared_swarm(configs);
 
-  // Launch the swarm.
-  launch_shared_swarm(swarm.clone(), bots, "localhost".to_string(), 25565, 500);
+  // Starting the swarm without blocking the thread.
+  launch_shared_swarm(swarm.clone(), "localhost".to_string(), 25565, 500);
 
   sleep(4000).await; // Waiting for all the bots to connect.
-
-  // Send a message from all bots to the chat.
-  swarm
-    .read()
-    .await
-    .send(Command::Chat("Hello, world!".to_string()))
-    .await;
-
+  swarm.read().await.send(BotCommand::Chat("Hello, world!".to_string())).await; // Send a message to the chat from all bots.
   sleep(5000).await; // Wait a little.
-
-  // Clean and destroy the swarm.
-  swarm.write().await.destroy().await;
+  swarm.write().await.destroy().await; // Clear and destroy swarm.
 
   Ok(())
 }
