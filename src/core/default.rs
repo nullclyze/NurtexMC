@@ -11,9 +11,8 @@ use azalea_protocol::packets::game::{
   ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundChat, ServerboundClientCommand, ServerboundGamePacket, ServerboundKeepAlive, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem
 };
 
-use crate::core::bot::Bot;
+use crate::core::bot::{Bot, BotCommand};
 use crate::core::events::BotEvent;
-use crate::core::terminal::Command;
 
 /// Дефолтный обработчик пакетов.
 pub fn default_packet_processor(
@@ -26,13 +25,15 @@ pub fn default_packet_processor(
 /// Дефолтный обработчик команд.
 pub fn default_command_processor(
   bot: &mut Bot,
-  command: Command,
+  command: BotCommand,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + '_>> {
   Box::pin(process_command(bot, command))
 }
 
 /// Функция обработки пакета (в состоянии Play).
 async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Result<bool> {
+  bot.emit_event(BotEvent::Packet(&packet));
+
   let Some(conn) = &mut bot.connection else {
     return Ok(true);
   };
@@ -117,6 +118,18 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 
       bot.emit_event(BotEvent::Death);
     }
+    ClientboundGamePacket::SystemChat(p) => {
+      bot.emit_event(BotEvent::Chat { 
+        sender_uuid: None, 
+        message: p.content.to_string()
+      });
+    }
+    ClientboundGamePacket::PlayerChat(p) => {
+      bot.emit_event(BotEvent::Chat { 
+        sender_uuid: Some(p.sender), 
+        message: p.message().to_string() 
+      });
+    }
     ClientboundGamePacket::Disconnect(p) => {
       return Err(Error::new(
         ErrorKind::ConnectionAborted,
@@ -130,13 +143,13 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 }
 
 /// Функция обработки внешней команды.
-async fn process_command(bot: &mut Bot, command: Command) -> io::Result<bool> {
+async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
     return Ok(true);
   };
 
   match command {
-    Command::Chat(message) => {
+    BotCommand::Chat(message) => {
       let start = SystemTime::now();
       let duration = start.duration_since(UNIX_EPOCH);
       let timestamp = match duration {
@@ -154,7 +167,7 @@ async fn process_command(bot: &mut Bot, command: Command) -> io::Result<bool> {
         }))
         .await?;
     }
-    Command::SetDirection { yaw, pitch } => {
+    BotCommand::SetDirection { yaw, pitch } => {
       conn
         .write(ServerboundGamePacket::MovePlayerRot(
           ServerboundMovePlayerRot {
@@ -167,7 +180,7 @@ async fn process_command(bot: &mut Bot, command: Command) -> io::Result<bool> {
         ))
         .await?;
     }
-    Command::SetPosition { x, y, z } => {
+    BotCommand::SetPosition { x, y, z } => {
       conn
         .write(ServerboundGamePacket::MovePlayerPos(
           ServerboundMovePlayerPos {
@@ -180,12 +193,12 @@ async fn process_command(bot: &mut Bot, command: Command) -> io::Result<bool> {
         ))
         .await?;
     }
-    Command::SwingArm(hand) => {
+    BotCommand::SwingArm(hand) => {
       conn
         .write(ServerboundGamePacket::Swing(ServerboundSwing { hand }))
         .await?;
     }
-    Command::StartUseItem(hand) => {
+    BotCommand::StartUseItem(hand) => {
       let look_direction = bot.components.physics.look_direction;
 
       conn.write(ServerboundGamePacket::UseItem(ServerboundUseItem {
@@ -195,7 +208,7 @@ async fn process_command(bot: &mut Bot, command: Command) -> io::Result<bool> {
         x_rot: look_direction.x_rot()
       })).await?;
     }
-    Command::ReleaseUseItem => {
+    BotCommand::ReleaseUseItem => {
       conn.write(ServerboundGamePacket::PlayerAction(ServerboundPlayerAction {
         action: Action::ReleaseUseItem,
         pos: BlockPos::new(0, 0, 0),
@@ -203,11 +216,12 @@ async fn process_command(bot: &mut Bot, command: Command) -> io::Result<bool> {
         seq: 0
       })).await?;
     }
-    Command::SendPacket(packet) => {
+    BotCommand::SendPacket(packet) => {
       conn.write(packet).await?;
     }
-    Command::Disconnect => {
+    BotCommand::Disconnect => {
       bot.disconnect().await?;
+      bot.emit_event(BotEvent::Disconnect);
       return Ok(false);
     }
   }

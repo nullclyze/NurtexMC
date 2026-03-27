@@ -5,6 +5,7 @@ use std::net::ToSocketAddrs;
 use std::pin::Pin;
 
 use azalea_protocol::connect::Connection;
+use azalea_protocol::packets::game::s_interact::InteractionHand;
 use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundGamePacket};
 use azalea_protocol::packets::handshake::s_intention::ServerboundIntention;
 use azalea_protocol::packets::login::s_hello::ServerboundHello;
@@ -18,7 +19,6 @@ use crate::core::components::{Physics, State};
 use crate::core::default::{default_command_processor, default_packet_processor};
 use crate::core::events::BotEvent;
 use crate::core::handler::{handle_configuration, handle_login};
-use crate::core::terminal::Command;
 use crate::utils::sleep;
 
 pub type PacketProcessorFn = for<'a> fn(
@@ -29,17 +29,41 @@ pub type PacketProcessorFn = for<'a> fn(
 >;
 pub type CommandProcessorFn = for<'a> fn(
   &'a mut Bot,
-  Command,
+  BotCommand,
 ) -> Pin<
   Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>,
 >;
 pub type EventListenerFn = fn(&mut Bot, BotEvent) -> io::Result<()>;
 
+#[derive(Clone, Debug)]
+pub enum BotCommand {
+  Chat(String),
+  SetDirection { yaw: f32, pitch: f32 },
+  SetPosition { x: f64, y: f64, z: f64 },
+  SwingArm(InteractionHand),
+  StartUseItem(InteractionHand),
+  ReleaseUseItem,
+  SendPacket(ServerboundGamePacket),
+  Disconnect,
+}
+
+#[derive(Clone)]
+pub struct BotTerminal {
+  pub receiver: String,
+  pub cmd: mpsc::Sender<BotCommand>
+}
+
+impl BotTerminal {
+  pub async fn send(&self, command: BotCommand) {
+    let _ = self.cmd.send(command).await;
+  }
+}
+
 pub struct Bot {
   pub username: String,
   pub uuid: Uuid,
   pub connection: Option<Connection<ClientboundGamePacket, ServerboundGamePacket>>,
-  pub command_receiver: mpsc::Receiver<Command>,
+  pub command_receiver: mpsc::Receiver<BotCommand>,
   pub entity_id: Option<i32>,
   pub components: BotComponents,
   pub plugins: BotPlugins,
@@ -91,12 +115,14 @@ pub struct PhysicsPlugin {
 }
 
 impl Bot {
-  pub fn new(username: &str, uuid: Uuid, command_receiver: mpsc::Receiver<Command>) -> Self {
-    Self {
+  pub fn new(username: &str, uuid: Uuid) -> (Self, BotTerminal) {
+    let (sender, receiver) = mpsc::channel(100);
+
+    let bot = Self {
       username: username.to_string(),
       uuid,
       connection: None,
-      command_receiver,
+      command_receiver: receiver,
       entity_id: None,
       components: BotComponents {
         physics: Physics::default(),
@@ -106,10 +132,17 @@ impl Bot {
       packet_processor: default_packet_processor,
       command_processor: default_command_processor,
       event_listener: None,
-    }
+    };
+
+    let terminal = BotTerminal {
+      receiver: username.to_string(),
+      cmd: sender
+    };
+    
+    (bot, terminal)
   }
 
-  // Метод установки плагинов бота.
+  /// Метод установки плагинов бота.
   pub fn set_plugins(mut self, plugins: BotPlugins) -> Self {
     self.plugins = plugins;
     self
@@ -284,7 +317,7 @@ impl Bot {
     false
   }
 
-  /// Метод выполнения определённых операций в каждый физический тик (20мс).
+  /// Метод выполнения определённых операций в каждый физический тик.
   async fn tick(&mut self) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
       return Ok(());
@@ -319,6 +352,14 @@ impl Bot {
 
     stream.shutdown().await?;
 
+    Ok(())
+  }
+
+  /// Метод переподключения бота к серверу.
+  pub async fn reconnect(&mut self, server_host: &str, server_port: u16, interval: u64) -> io::Result<()> {
+    self.disconnect().await?;
+    sleep(interval).await;
+    self.connect_to(server_host, server_port).await?;
     Ok(())
   }
 }

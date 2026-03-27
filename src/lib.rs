@@ -1,77 +1,52 @@
 use std::sync::Arc;
 
-use tokio::sync::{RwLock, mpsc};
-use uuid::Uuid;
+use tokio::sync::RwLock;
 
-use crate::{
-  core::{
-    bot::{Bot, BotPlugins},
-    swarm::{SharedSwarm, Swarm, SwarmObject},
-    terminal::Terminal,
-  },
-  utils::sleep,
-};
+// Ре-экспорт
+pub use azalea_core::*;
+pub use azalea_protocol::*;
+pub use azalea_entity::*;
+pub use azalea_crypto::*;
+
+use crate::core::swarm::{BotConfig, SharedSwarm, Swarm};
+use crate::utils::sleep;
 
 pub mod core;
 pub mod utils;
 
-/// Вспомогательная функция создания offline-бота.
-pub fn create_bot(username: &str, plugins: BotPlugins) -> (Bot, Terminal) {
-  let (tx, rx) = mpsc::channel(100);
+/// Вспомогательная функция создание роя ботов.
+pub fn create_swarm(configs: Vec<BotConfig>) -> Swarm {
+  let mut swarm = Swarm::new();
 
-  // Нулевой UUID (00000000-0000-0000-0000-000000000000) для offline-режима.
-  let bot = Bot::new(username, Uuid::nil(), rx).set_plugins(plugins);
-
-  let terminal = Terminal {
-    username: username.to_string(),
-    sender: tx,
-  };
-
-  (bot, terminal)
-}
-
-/// Вспомогательная функция создания роя offline-ботов.
-pub fn create_swarm(objects: Vec<SwarmObject>) -> (Swarm, Vec<Bot>) {
-  let mut bots = Vec::new();
-  let mut terminals = Vec::new();
-
-  for object in objects {
-    let (bot, terminal) = create_bot(&object.username, object.plugins);
-    bots.push(bot);
-    terminals.push(terminal);
+  for config in configs {
+    swarm.add_bot(&config.username, config.plugins);
   }
 
-  let swarm = Swarm {
-    terminals,
-    handles: Vec::new(),
-  };
-
-  (swarm, bots)
+  swarm
 }
 
-/// Вспомогательная функция создания shared-роя offline-ботов.
-pub fn create_shared_swarm(objects: Vec<SwarmObject>) -> (SharedSwarm, Vec<Bot>) {
-  let (swarm, bots) = create_swarm(objects);
-  (Arc::new(RwLock::new(swarm)), bots)
+/// Вспомогательная функция создание shared-роя ботов.
+pub fn create_shared_swarm(configs: Vec<BotConfig>) -> SharedSwarm {
+  Arc::new(RwLock::new(create_swarm(configs)))
 }
 
-/// Вспомогательная функция неблокирующего запуска shared-роя ботов на сервер.
+/// Неблокирующий запуск shared-роя ботов на сервер.
 pub fn launch_shared_swarm(
   swarm: SharedSwarm,
-  bots: Vec<Bot>,
   server_host: String,
   server_port: u16,
   join_delay: u64,
 ) {
   tokio::spawn(async move {
+    let mut swarm_guard = swarm.write().await;
+    let bots = std::mem::take(&mut swarm_guard.bots);
+    drop(swarm_guard);
+
     if join_delay > 0 {
       for mut bot in bots {
         let host = server_host.clone();
-
         let handle = tokio::spawn(async move { bot.connect_to(&host, server_port).await });
-
         swarm.write().await.handles.push(handle);
-
         sleep(join_delay).await;
       }
     } else {
