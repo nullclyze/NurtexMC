@@ -19,26 +19,25 @@ nurtex = { git = "https://github.com/nullclyze/NurtexMC" }
 ```rust
 use std::io;
 
-use nurtex::core::bot::{Bot, BotCommand};
+use nurtex::core::bot::Bot;
 use nurtex::utils::sleep;
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
   // Creating a bot and its terminal.
-  let (mut bot, terminal) = Bot::new("NurtexBot", Uuid::nil());
+  let (mut bot, terminal) = Bot::new("NurtexBot");
 
   // Spawn an asynchronous task.
   tokio::spawn(async move {
     sleep(3000).await; // Wait for the bot to connect.
 
     // Send a message to the chat.
-    terminal.send(BotCommand::Chat("Hello, world!".to_string())).await; 
+    terminal.chat("Hello, world!").await; 
 
     sleep(5000).await; // Wait a little.
 
     // Disconnect bot.
-    terminal.send(BotCommand::Disconnect).await; 
+    terminal.disconnect().await; 
   });
 
   // Connecting bot to the server.
@@ -55,21 +54,21 @@ use std::io;
 
 use nurtex::{create_shared_swarm, launch_shared_swarm};
 use nurtex::core::bot::BotCommand;
-use nurtex::core::swarm::BotConfig;
+use nurtex::core::swarm::SwarmObject;
 use nurtex::utils::sleep;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-  // Creating bot configs.
-  let mut configs = Vec::new();
+  // Creating swarm objects.
+  let mut objects = Vec::new();
 
   for i in 0..4 {
-    let config = BotConfig::new(format!("bot_{}", i));
-    configs.push(config);
+    let object = SwarmObject::new(format!("bot_{}", i));
+    objects.push(object);
   }
 
   // Creating a shared-swarm of bots.
-  let swarm = create_shared_swarm(configs);
+  let swarm = create_shared_swarm(objects);
 
   // Starting the swarm without blocking the thread.
   launch_shared_swarm(swarm.clone(), "localhost".to_string(), 25565, 500);
