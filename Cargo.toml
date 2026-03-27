@@ -1,7 +1,16 @@
 [package]
 name = "nurtex"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Lightweight library for creating Minecraft bots. Asynchronous, optimized, ease of coding."
+repository = "https://github.com/nullclyze/NurtexMC"
+readme = "README.md"
+keywords = ["minecraft", "bot", "async", "simple"]
+
+[lib]
+name = "nurtex"
+path = "src/lib.rs"
 
 [dependencies]
 tokio = { version = "1.50.0", features = ["full"] }

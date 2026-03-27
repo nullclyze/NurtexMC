@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "nurtex"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "azalea-core",
  "azalea-crypto",
