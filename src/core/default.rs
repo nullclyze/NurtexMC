@@ -116,10 +116,6 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
       for entry in p.entries {
         if entry.profile.name == bot.username {
           profile.ping = entry.latency;
-
-          if let Some(name) = entry.display_name {
-            profile.display_name = Some(name.to_string());
-          }
         } else {
           let storage = &mut bot.storage;
 
