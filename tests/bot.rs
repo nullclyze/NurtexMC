@@ -21,7 +21,7 @@ mod tests {
       .set_plugins(BotPlugins {
         auto_reconnect: AutoReconnectPlugin {
           enabled: false,
-          reconnect_delay: 0
+          reconnect_delay: 0,
         },
         ..Default::default()
       });
@@ -38,24 +38,35 @@ mod tests {
       }
       BotEvent::Disconnect => {
         println!("Bot {} disconnected.", bot.username);
-      },
-      BotEvent::Chat { sender_uuid, message } => {
+      }
+      BotEvent::Chat {
+        sender_uuid,
+        message,
+      } => {
         if let Some(uuid) = sender_uuid {
-          println!("Bot {} received a message from {}: {}", bot.username, uuid, message);
+          println!(
+            "Bot {} received a message from {}: {}",
+            bot.username, uuid, message
+          );
         }
 
         if message.contains("entities") {
           for (id, entity) in &bot.storage.entities {
             println!("{} - {:?}", id, entity);
           }
+          
+          println!("Entity count: {}", bot.storage.entities.len());
         }
       }
       BotEvent::Packet(packet) => match packet {
         ClientboundGamePacket::AddEntity(p) => {
-          println!("Bot {} has received a new entity! Entity ID: {}, Position: {}", bot.username, p.id.0, p.position);
+          println!(
+            "Bot {} has received a new entity! Entity ID: {}, Position: {}",
+            bot.username, p.id.0, p.position
+          );
         }
         _ => {}
-      }
+      },
       _ => {}
     }
 

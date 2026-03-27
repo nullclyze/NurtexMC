@@ -2,10 +2,10 @@
 mod tests {
   use std::io;
 
-  use nurtex::{create_shared_swarm, launch_shared_swarm};
   use nurtex::core::bot::BotCommand;
   use nurtex::core::swarm::SwarmObject;
   use nurtex::utils::sleep;
+  use nurtex::{create_shared_swarm, launch_shared_swarm};
 
   #[tokio::test]
   async fn launch_swarm() -> io::Result<()> {
@@ -21,7 +21,11 @@ mod tests {
     launch_shared_swarm(swarm.clone(), "localhost".to_string(), 25565, 25);
 
     sleep(5000).await;
-    swarm.read().await.send(BotCommand::Chat("Test".to_string())).await;
+    swarm
+      .read()
+      .await
+      .send(BotCommand::Chat("Test".to_string()))
+      .await;
 
     sleep(5000).await;
 
