@@ -6,7 +6,9 @@ use azalea_entity::LookDirection;
 use azalea_protocol::common::movements::MoveFlags;
 use azalea_protocol::packets::game::s_player_action::Action;
 use azalea_protocol::packets::game::{
-  ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundClientCommand, ServerboundGamePacket, ServerboundKeepAlive, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem
+  ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundClientCommand,
+  ServerboundGamePacket, ServerboundKeepAlive, ServerboundMovePlayerPos, ServerboundMovePlayerRot,
+  ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem,
 };
 
 use crate::core::bot::{Bot, BotCommand};
@@ -32,7 +34,10 @@ pub fn default_command_processor(
 /// Функция обработки пакета (в состоянии Play).
 async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
-    return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", bot.username)));
+    return Err(Error::new(
+      ErrorKind::NotConnected,
+      format!("Bot {} connection could not be obtained", bot.username),
+    ));
   };
 
   match packet {
@@ -46,7 +51,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         velocity: Vec3::ZERO,
         look_direction: LookDirection::new(p.y_rot.into(), p.x_rot.into()),
         on_ground: false,
-        player_info: None
+        player_info: None,
       };
 
       storage.entities.insert(p.id.0, entity);
@@ -76,13 +81,42 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 
       bot.emit_event(BotEvent::Spawn);
     }
+    ClientboundGamePacket::MoveEntityPos(p) => {
+      if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+        entity.position += p.delta.into();
+        entity.on_ground = p.on_ground;
+      }
+    }
+    ClientboundGamePacket::MoveEntityRot(p) => {
+      if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+        entity.on_ground = p.on_ground;
+
+        let old_y_rot = entity.look_direction.y_rot();
+        let old_x_rot = entity.look_direction.x_rot();
+
+        entity.look_direction =
+          LookDirection::new(old_y_rot + p.y_rot as f32, old_x_rot + p.x_rot as f32);
+      }
+    }
+    ClientboundGamePacket::MoveEntityPosRot(p) => {
+      if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+        entity.position += p.delta.into();
+        entity.on_ground = p.on_ground;
+
+        let old_y_rot = entity.look_direction.y_rot();
+        let old_x_rot = entity.look_direction.x_rot();
+
+        entity.look_direction =
+          LookDirection::new(old_y_rot + p.y_rot as f32, old_x_rot + p.x_rot as f32);
+      }
+    }
     ClientboundGamePacket::PlayerInfoUpdate(p) => {
       let profile = &mut bot.components.profile;
 
       for entry in p.entries {
         if entry.profile.name == bot.username {
           profile.ping = entry.latency;
-        
+
           if let Some(name) = entry.display_name {
             profile.display_name = Some(name.to_string());
           }
@@ -97,7 +131,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
             let player_info = PlayerInfo {
               username: entry.profile.name.clone(),
               game_mode: entry.game_mode.name().to_string(),
-              ping: entry.latency
+              ping: entry.latency,
             };
 
             entity.player_info = Some(player_info);
@@ -118,7 +152,13 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
       let physics = &mut bot.components.physics;
 
       physics.position = p.change.pos;
-      physics.velocity = p.change.delta;
+
+      let delta_length_squared = p.change.delta.length_squared();
+
+      if delta_length_squared > 0.0001 {
+        physics.velocity = p.change.delta;
+      }
+
       physics.look_direction = p.change.look_direction;
 
       conn
@@ -128,15 +168,14 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         .await?;
     }
     ClientboundGamePacket::SetEntityMotion(p) => {
-      if !bot.is_this_my_entity_id(p.id.0) {
+      if bot.is_this_my_entity_id(p.id.0) {
+        let physics = &mut bot.components.physics;
+        physics.velocity = p.delta.to_vec3();
+      } else {
         if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
           entity.velocity = p.delta.to_vec3();
         }
       }
-
-      let physics = &mut bot.components.physics;
-
-      physics.velocity = p.delta.to_vec3();
     }
     ClientboundGamePacket::EntityPositionSync(p) => {
       if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
@@ -172,15 +211,15 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
       bot.emit_event(BotEvent::Death);
     }
     ClientboundGamePacket::SystemChat(p) => {
-      bot.emit_event(BotEvent::Chat { 
-        sender_uuid: None, 
-        message: p.content.to_string()
+      bot.emit_event(BotEvent::Chat {
+        sender_uuid: None,
+        message: p.content.to_string(),
       });
     }
     ClientboundGamePacket::PlayerChat(p) => {
-      bot.emit_event(BotEvent::Chat { 
-        sender_uuid: Some(p.sender), 
-        message: p.message().to_string() 
+      bot.emit_event(BotEvent::Chat {
+        sender_uuid: Some(p.sender),
+        message: p.message().to_string(),
       });
     }
     ClientboundGamePacket::Disconnect(p) => {
@@ -198,7 +237,10 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 /// Функция обработки внешней команды.
 async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
-    return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", bot.username)));
+    return Err(Error::new(
+      ErrorKind::NotConnected,
+      format!("Bot {} connection could not be obtained", bot.username),
+    ));
   };
 
   match command {
@@ -239,20 +281,26 @@ async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool>
     BotCommand::StartUseItem(hand) => {
       let look_direction = bot.components.physics.look_direction;
 
-      conn.write(ServerboundGamePacket::UseItem(ServerboundUseItem {
-        hand: hand,
-        seq: 0,
-        y_rot: look_direction.y_rot(),
-        x_rot: look_direction.x_rot()
-      })).await?;
+      conn
+        .write(ServerboundGamePacket::UseItem(ServerboundUseItem {
+          hand: hand,
+          seq: 0,
+          y_rot: look_direction.y_rot(),
+          x_rot: look_direction.x_rot(),
+        }))
+        .await?;
     }
     BotCommand::ReleaseUseItem => {
-      conn.write(ServerboundGamePacket::PlayerAction(ServerboundPlayerAction {
-        action: Action::ReleaseUseItem,
-        pos: BlockPos::new(0, 0, 0),
-        direction: Direction::Down,
-        seq: 0
-      })).await?;
+      conn
+        .write(ServerboundGamePacket::PlayerAction(
+          ServerboundPlayerAction {
+            action: Action::ReleaseUseItem,
+            pos: BlockPos::new(0, 0, 0),
+            direction: Direction::Down,
+            seq: 0,
+          },
+        ))
+        .await?;
     }
     BotCommand::SendPacket(packet) => {
       conn.write(packet).await?;
@@ -262,7 +310,11 @@ async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool>
       bot.emit_event(BotEvent::Disconnect);
       return Ok(false);
     }
-    BotCommand::Reconnect { server_host, server_port, interval } => {
+    BotCommand::Reconnect {
+      server_host,
+      server_port,
+      interval,
+    } => {
       bot.reconnect(&server_host, server_port, interval).await?;
     }
   }

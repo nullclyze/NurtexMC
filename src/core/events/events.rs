@@ -8,6 +8,9 @@ pub enum BotEvent<'e> {
   Spawn,
   Death,
   Disconnect,
-  Chat { sender_uuid: Option<Uuid>, message: String },
-  Packet(&'e ClientboundGamePacket)
+  Chat {
+    sender_uuid: Option<Uuid>,
+    message: String,
+  },
+  Packet(&'e ClientboundGamePacket),
 }

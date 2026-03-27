@@ -58,14 +58,14 @@ pub async fn handle_login(
 /// Функция обработки всего цикла пакетов в состоянии Configuration.
 pub async fn handle_configuration(
   conn: &mut Connection<ClientboundConfigPacket, ServerboundConfigPacket>,
-  client_information: ClientInformation
+  client_information: ClientInformation,
 ) -> io::Result<()> {
   use azalea_protocol::packets::config::*;
 
   conn
     .write(ServerboundConfigPacket::ClientInformation(
       s_client_information::ServerboundClientInformation {
-        information: client_information
+        information: client_information,
       },
     ))
     .await?;

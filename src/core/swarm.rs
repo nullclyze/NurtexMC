@@ -48,14 +48,9 @@ impl Swarm {
   }
 
   /// Метод, запускающий всех ботов из роя, который блокирует поток на время запуска.
-  pub async fn launch_blocking(
-    &mut self,
-    server_host: &str,
-    server_port: u16,
-    join_delay: u64,
-  ) {
+  pub async fn launch_blocking(&mut self, server_host: &str, server_port: u16, join_delay: u64) {
     let bots = std::mem::take(&mut self.bots);
-    
+
     for bot in bots {
       self.handles.push(bot.spawn(server_host, server_port));
       sleep(join_delay).await;
@@ -75,7 +70,7 @@ impl Swarm {
       if terminal.receiver.as_str() == username {
         terminal.send(command).await;
         break;
-      } 
+      }
     }
   }
 

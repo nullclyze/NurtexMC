@@ -9,7 +9,9 @@ use azalea_protocol::common::client_information::{ClientInformation, ParticleSta
 use azalea_protocol::connect::Connection;
 use azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate;
 use azalea_protocol::packets::game::s_interact::InteractionHand;
-use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundChat, ServerboundGamePacket};
+use azalea_protocol::packets::game::{
+  ClientboundGamePacket, ServerboundChat, ServerboundGamePacket,
+};
 use azalea_protocol::packets::handshake::s_intention::ServerboundIntention;
 use azalea_protocol::packets::login::s_hello::ServerboundHello;
 use azalea_protocol::packets::login::s_login_acknowledged::ServerboundLoginAcknowledged;
@@ -26,37 +28,46 @@ use crate::core::events::BotEvent;
 use crate::core::handler::{handle_configuration, handle_login};
 use crate::utils::sleep;
 
-pub type PacketProcessorFn = for<'a> fn(
-  &'a mut Bot,
-  ClientboundGamePacket,
-) -> Pin<
-  Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>,
->;
-pub type CommandProcessorFn = for<'a> fn(
-  &'a mut Bot,
-  BotCommand,
-) -> Pin<
-  Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>,
->;
+pub type PacketProcessorFn =
+  for<'a> fn(
+    &'a mut Bot,
+    ClientboundGamePacket,
+  ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
+pub type CommandProcessorFn =
+  for<'a> fn(
+    &'a mut Bot,
+    BotCommand,
+  ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
 pub type EventListenerFn = fn(&mut Bot, BotEvent) -> io::Result<()>;
 
 #[derive(Clone, Debug)]
 pub enum BotCommand {
   Chat(String),
-  SetDirection { yaw: f32, pitch: f32 },
-  SetPosition { x: f64, y: f64, z: f64 },
+  SetDirection {
+    yaw: f32,
+    pitch: f32,
+  },
+  SetPosition {
+    x: f64,
+    y: f64,
+    z: f64,
+  },
   SwingArm(InteractionHand),
   StartUseItem(InteractionHand),
   ReleaseUseItem,
   SendPacket(ServerboundGamePacket),
   Disconnect,
-  Reconnect { server_host: String, server_port: u16, interval: u64 }
+  Reconnect {
+    server_host: String,
+    server_port: u16,
+    interval: u64,
+  },
 }
 
 #[derive(Clone)]
 pub struct BotTerminal {
   pub receiver: String,
-  pub cmd: mpsc::Sender<BotCommand>
+  pub cmd: mpsc::Sender<BotCommand>,
 }
 
 impl BotTerminal {
@@ -77,11 +88,13 @@ impl BotTerminal {
 
   /// Вспомогательный метод отправки команды Disconnect в терминал.
   pub async fn reconnect(&self, server_host: impl Into<String>, server_port: u16, interval: u64) {
-    self.send(BotCommand::Reconnect { 
-      server_host: server_host.into(), 
-      server_port, 
-      interval 
-    }).await;
+    self
+      .send(BotCommand::Reconnect {
+        server_host: server_host.into(),
+        server_port,
+        interval,
+      })
+      .await;
   }
 }
 
@@ -104,14 +117,14 @@ pub struct Bot {
 pub enum BotStatus {
   Offline,
   Connecting,
-  Online
+  Online,
 }
 
 #[derive(Debug)]
 pub struct BotComponents {
   pub physics: Physics,
   pub state: State,
-  pub profile: Profile
+  pub profile: Profile,
 }
 
 #[derive(Debug)]
@@ -159,11 +172,11 @@ impl Bot {
       username: username.to_string(),
       uuid: Uuid::nil(),
       connection: None,
-      storage: Storage::default(),
+      storage: Storage::new(),
       components: BotComponents {
         physics: Physics::default(),
         state: State::default(),
-        profile: Profile::default()
+        profile: Profile::default(),
       },
       plugins: BotPlugins::default(),
       client_information: ClientInformation {
@@ -178,9 +191,9 @@ impl Bot {
 
     let terminal = BotTerminal {
       receiver: username.to_string(),
-      cmd: sender
+      cmd: sender,
     };
-    
+
     (bot, terminal)
   }
 
@@ -188,10 +201,8 @@ impl Bot {
   pub fn spawn(mut self, server_host: &str, server_port: u16) -> JoinHandle<io::Result<()>> {
     let host = server_host.to_string();
     let port = server_port;
-    
-    tokio::spawn(async move {
-      self.connect_to(&host, port).await
-    })
+
+    tokio::spawn(async move { self.connect_to(&host, port).await })
   }
 
   /// Метод установки UUID.
@@ -319,7 +330,7 @@ impl Bot {
         Err(err) => match err.kind() {
           ErrorKind::ConnectionRefused
           | ErrorKind::ConnectionReset
-          | ErrorKind::ConnectionAborted 
+          | ErrorKind::ConnectionAborted
           | ErrorKind::NotConnected => {
             self.emit_event(BotEvent::Disconnect);
 
@@ -397,7 +408,10 @@ impl Bot {
   /// Метод выполнения определённых операций в каждый физический тик.
   async fn tick(&mut self) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
-      return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", self.username)));
+      return Err(Error::new(
+        ErrorKind::NotConnected,
+        format!("Bot {} connection could not be obtained", self.username),
+      ));
     };
 
     if self.plugins.physics.enabled {
@@ -415,7 +429,10 @@ impl Bot {
   /// Метод закрытия TcpStream (отключение от сервера).
   pub async fn disconnect(&mut self) -> io::Result<()> {
     let Some(conn) = self.connection.take() else {
-      return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", self.username)));
+      return Err(Error::new(
+        ErrorKind::NotConnected,
+        format!("Bot {} connection could not be obtained", self.username),
+      ));
     };
 
     let mut stream = match conn.unwrap() {
@@ -440,7 +457,12 @@ impl Bot {
   }
 
   /// Метод переподключения бота к серверу.
-  pub async fn reconnect(&mut self, server_host: &str, server_port: u16, interval: u64) -> io::Result<()> {
+  pub async fn reconnect(
+    &mut self,
+    server_host: &str,
+    server_port: u16,
+    interval: u64,
+  ) -> io::Result<()> {
     self.disconnect().await?;
     sleep(interval).await;
     self.connect_to(server_host, server_port).await?;
@@ -449,7 +471,10 @@ impl Bot {
 
   pub async fn chat(&mut self, message: impl Into<String>) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
-      return Err(Error::new(ErrorKind::NotConnected, format!("Bot {} connection could not be obtained", self.username)));
+      return Err(Error::new(
+        ErrorKind::NotConnected,
+        format!("Bot {} connection could not be obtained", self.username),
+      ));
     };
 
     let start = SystemTime::now();

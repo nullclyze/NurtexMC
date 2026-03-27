@@ -4,7 +4,7 @@ use hashbrown::HashMap;
 use uuid::Uuid;
 
 pub struct Storage {
-  pub entities: HashMap<i32, Entity>
+  pub entities: HashMap<i32, Entity>,
 }
 
 #[derive(Debug)]
@@ -15,20 +15,20 @@ pub struct Entity {
   pub velocity: Vec3,
   pub look_direction: LookDirection,
   pub on_ground: bool,
-  pub player_info: Option<PlayerInfo>
+  pub player_info: Option<PlayerInfo>,
 }
 
 #[derive(Debug)]
 pub struct PlayerInfo {
   pub username: String,
   pub game_mode: String,
-  pub ping: i32
+  pub ping: i32,
 }
 
-impl Default for Storage {
-  fn default() -> Self {
+impl Storage {
+  pub fn new() -> Self {
     Self {
-      entities: HashMap::new()
+      entities: HashMap::new(),
     }
   }
 }

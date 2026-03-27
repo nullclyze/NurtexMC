@@ -32,37 +32,13 @@ impl Default for Physics {
 }
 
 impl Physics {
-  pub fn apply_velocity(&mut self) {
-    self.position += self.velocity;
-  }
-
-  pub fn apply_gravity(&mut self) {
-    if !self.on_ground {
-      self.velocity.y -= 0.08;
-      self.velocity.y *= 0.98;
-    } else {
-      if self.velocity.y < 0.0 {
-        self.velocity.y = 0.0;
-      }
-    }
-  }
-
-  pub fn apply_friction(&mut self) {
-    if self.on_ground {
-      self.velocity.x *= 0.6;
-      self.velocity.z *= 0.6;
-    } else {
-      self.velocity.x *= 0.91;
-      self.velocity.z *= 0.91;
-    }
-  }
-
+  /// Метод обновления физики.
   pub async fn update(
     &mut self,
     conn: &mut Connection<ClientboundGamePacket, ServerboundGamePacket>,
   ) -> io::Result<()> {
-    self.apply_velocity();
     self.apply_gravity();
+    self.apply_movement();
     self.apply_friction();
 
     let pos_delta = self.position - self.last_sent_position;
@@ -93,5 +69,31 @@ impl Physics {
     }
 
     Ok(())
+  }
+
+  /// Метод применения гравитации.
+  fn apply_gravity(&mut self) {
+    if !self.on_ground {
+      self.velocity.y -= 0.08;
+      self.velocity.y *= 0.98;
+    } else {
+      if self.velocity.y < 0.0 {
+        self.velocity.y = 0.0;
+      }
+    }
+  }
+
+  /// Метод применения движения.
+  fn apply_movement(&mut self) {
+    self.position += self.velocity;
+  }
+
+  /// Метод применения трения.
+  fn apply_friction(&mut self) {
+    let inertia = if self.on_ground { 0.546 } else { 0.91 };
+
+    self.velocity.x *= inertia;
+    self.velocity.z *= inertia;
+    self.velocity.y *= 0.98;
   }
 }

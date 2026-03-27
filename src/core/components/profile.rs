@@ -12,7 +12,7 @@ impl Default for Profile {
       entity_id: None,
       display_name: None,
       game_mode: "unknown".to_string(),
-      ping: 0
+      ping: 0,
     }
   }
 }
