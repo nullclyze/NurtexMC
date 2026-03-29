@@ -16,8 +16,8 @@ mod tests {
       println!("Bot {} spawned!", username);
     });
 
-    event_handler.on_chat(|_terminal, _sender, msg| async move {
-      println!("Chat: {}", msg);
+    event_handler.on_chat(|_terminal, payload| async move {
+      println!("[{}] Chat message: {}", payload.timestamp, payload.message);
     });
 
     bot

@@ -4,7 +4,6 @@ use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use azalea_protocol::common::client_information::{ClientInformation, ParticleStatus};
 use azalea_protocol::connect::Connection;
@@ -25,10 +24,10 @@ use crate::core::common::{BotCommand, BotComponents, BotPlugins, BotStatus, BotT
 use crate::core::components::{Physics, Profile, State};
 use crate::core::data::Storage;
 use crate::core::default::{default_command_processor, default_packet_processor};
-use crate::core::events::{BotEvent, EventHandler};
+use crate::core::events::{BotEvent, EventHandler, PacketPayload};
 use crate::core::handler::{handle_configuration, handle_login};
 use crate::core::swarm::SharedStorage;
-use crate::utils::sleep;
+use crate::utils::{sleep, timestamp};
 
 pub type PacketProcessorFn =
   for<'a> fn(
@@ -272,7 +271,10 @@ impl Bot {
 
       tokio::select! {
         Ok(packet) = conn.read() => {
-          self.emit_event(BotEvent::Packet(packet.clone()));
+          self.emit_event(BotEvent::Packet(PacketPayload {
+            packet: packet.clone(),
+            timestamp: timestamp()
+          }));
 
           match (self.packet_processor)(self, packet).await {
             Ok(true) => continue,
@@ -381,17 +383,10 @@ impl Bot {
       ));
     };
 
-    let start = SystemTime::now();
-    let duration = start.duration_since(UNIX_EPOCH);
-    let timestamp = match duration {
-      Ok(d) => d.as_secs(),
-      Err(_) => 0,
-    };
-
     conn
       .write(ServerboundGamePacket::Chat(ServerboundChat {
         message: message.into(),
-        timestamp: timestamp,
+        timestamp: timestamp(),
         salt: 0,
         signature: None,
         last_seen_messages: LastSeenMessagesUpdate::default(),

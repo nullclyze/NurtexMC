@@ -14,7 +14,8 @@ use azalea_protocol::packets::game::{
 use crate::core::bot::Bot;
 use crate::core::common::BotCommand;
 use crate::core::data::{Entity, PlayerInfo};
-use crate::core::events::BotEvent;
+use crate::core::events::{BotEvent, ChatPayload};
+use crate::utils::timestamp;
 
 /// Дефолтный обработчик пакетов.
 pub fn default_packet_processor(
@@ -312,16 +313,18 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
       bot.emit_event(BotEvent::Death);
     }
     ClientboundGamePacket::SystemChat(p) => {
-      bot.emit_event(BotEvent::Chat {
+      bot.emit_event(BotEvent::Chat(ChatPayload {
         sender_uuid: None,
         message: p.content.to_string(),
-      });
+        timestamp: timestamp(),
+      }));
     }
     ClientboundGamePacket::PlayerChat(p) => {
-      bot.emit_event(BotEvent::Chat {
+      bot.emit_event(BotEvent::Chat(ChatPayload {
         sender_uuid: Some(p.sender),
         message: p.message().to_string(),
-      });
+        timestamp: timestamp(),
+      }));
     }
     ClientboundGamePacket::Disconnect(p) => {
       return Err(Error::new(

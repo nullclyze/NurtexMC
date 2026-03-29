@@ -2,10 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use azalea_protocol::packets::game::ClientboundGamePacket;
-
 use crate::core::common::BotTerminal;
-use crate::core::events::BotEvent;
+use crate::core::events::{BotEvent, ChatPayload, PacketPayload};
 
 pub type AsyncEventHandler =
   Box<dyn Fn(Arc<BotTerminal>, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
@@ -23,14 +21,14 @@ pub struct EventHandler {
     Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   chat_handler: Option<
     Arc<
-      dyn Fn(Arc<BotTerminal>, Option<uuid::Uuid>, String) -> Pin<Box<dyn Future<Output = ()> + Send>>
+      dyn Fn(Arc<BotTerminal>, ChatPayload) -> Pin<Box<dyn Future<Output = ()> + Send>>
         + Send
         + Sync,
     >,
   >,
   packet_handler: Option<
     Arc<
-      dyn Fn(Arc<BotTerminal>, ClientboundGamePacket) -> Pin<Box<dyn Future<Output = ()> + Send>>
+      dyn Fn(Arc<BotTerminal>, PacketPayload) -> Pin<Box<dyn Future<Output = ()> + Send>>
         + Send
         + Sync,
     >,
@@ -92,24 +90,21 @@ impl EventHandler {
 
   pub fn on_chat<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(Arc<BotTerminal>, Option<uuid::Uuid>, String) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>, ChatPayload) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
-    self.chat_handler = Some(Arc::new(move |terminal, uuid, message| {
-      Box::pin(handler(terminal, uuid, message))
+    self.chat_handler = Some(Arc::new(move |terminal, payload| {
+      Box::pin(handler(terminal, payload))
     }));
   }
 
   pub fn on_packet<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(Arc<BotTerminal>, azalea_protocol::packets::game::ClientboundGamePacket) -> Fut
-      + Send
-      + Sync
-      + 'static,
+    F: Fn(Arc<BotTerminal>, PacketPayload) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
-    self.packet_handler = Some(Arc::new(move |terminal, packet| {
-      Box::pin(handler(terminal, packet))
+    self.packet_handler = Some(Arc::new(move |terminal, payload| {
+      Box::pin(handler(terminal, payload))
     }));
   }
 
@@ -141,17 +136,14 @@ impl EventHandler {
           handler(terminal).await;
         }
       }
-      BotEvent::Chat {
-        sender_uuid,
-        message,
-      } => {
+      BotEvent::Chat(payload) => {
         if let Some(handler) = &self.chat_handler {
-          handler(terminal, sender_uuid, message).await;
+          handler(terminal, payload).await;
         }
       }
-      BotEvent::Packet(packet) => {
+      BotEvent::Packet(payload) => {
         if let Some(handler) = &self.packet_handler {
-          handler(terminal, packet).await;
+          handler(terminal, payload).await;
         }
       }
     }
