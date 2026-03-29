@@ -7,12 +7,25 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::core::bot::{Bot, BotCommand, BotPlugins};
+use crate::core::bot::Bot;
+use crate::core::common::{BotCommand, BotPlugins, BotTerminal};
+use crate::core::data::Storage;
 use crate::utils::sleep;
 
+pub type SharedStorage = Arc<RwLock<Storage>>;
+
 pub struct Swarm {
+  /// Список всех ботов, после запуска данный список будет пустым.
   pub bots: Vec<Bot>,
+
+  /// Список всех терминалов, используется для управления определёнными ботами.
+  pub terminals: Vec<Arc<BotTerminal>>,
+
+  /// Список всех задач (задач подключений).
   pub handles: Vec<JoinHandle<io::Result<()>>>,
+
+  /// Shared-хранилище.
+  pub shared_storage: SharedStorage,
 }
 
 pub type SharedSwarm = Arc<RwLock<Swarm>>;
@@ -21,14 +34,26 @@ impl Swarm {
   pub fn new() -> Self {
     Self {
       bots: Vec::new(),
+      terminals: Vec::new(),
       handles: Vec::new(),
+      shared_storage: Arc::new(RwLock::new(Storage::new())),
     }
   }
 
   /// Метод добавления бота в рой.
-  pub fn add_bot(&mut self, username: &str, plugins: BotPlugins) {
-    let bot = Bot::new(username).set_plugins(plugins);
+  pub fn add_bot(&mut self, object: SwarmObject) {
+    let mut bot = Bot::new(&object.username)
+      .set_uuid(object.uuid)
+      .set_plugins(object.plugins);
+
+    if object.use_shared_storage {
+      bot = bot.set_shared_storage(self.shared_storage.clone());
+    }
+
+    let terminal = Arc::clone(&bot.terminal);
+
     self.bots.push(bot);
+    self.terminals.push(terminal);
   }
 
   /// Метод получения бота по его юзернейму.
@@ -53,16 +78,16 @@ impl Swarm {
 
   /// Метод отправки команды всем ботам из роя.
   pub async fn send(&self, command: BotCommand) {
-    for bot in &self.bots {
-      bot.terminal.send(command.clone()).await;
+    for terminal in &self.terminals {
+      terminal.send(command.clone()).await;
     }
   }
 
   /// Метод отправки команды определённому боту из роя.
   pub async fn send_to(&self, username: &str, command: BotCommand) {
-    for bot in &self.bots {
-      if bot.username == username {
-        bot.terminal.send(command).await;
+    for terminal in &self.terminals {
+      if terminal.receiver.as_str() == username {
+        terminal.send(command).await;
         break;
       }
     }
@@ -70,34 +95,61 @@ impl Swarm {
 
   /// Метод очистки и выключения роя.
   pub async fn destroy(&mut self) {
-    for bot in &self.bots {
-      bot.terminal.send(BotCommand::Disconnect).await;
+    for terminal in &self.terminals {
+      terminal.send(BotCommand::Disconnect).await;
+    }
+
+    sleep(1000).await;
+
+    for handle in &self.handles {
+      handle.abort();
     }
 
     self.bots.clear();
+    self.terminals.clear();
+    self.handles.clear();
+  }
+
+  /// Метод принудительного уничтожения роя без ожидания.
+  pub fn force_destroy(&mut self) {
+    for handle in &self.handles {
+      handle.abort();
+    }
+
+    self.bots.clear();
+    self.terminals.clear();
     self.handles.clear();
   }
 }
 
 #[derive(Debug)]
 pub struct SwarmObject {
+  /// Юзернейм бота.
   pub username: String,
-  pub uuid: Option<Uuid>,
+
+  /// UUID бота (по умолчанию нулевой).
+  pub uuid: Uuid,
+
+  /// Плагины бота.
   pub plugins: BotPlugins,
+
+  /// Флаг, который определяет, будет ли бот использовать shared-хранилище роя (по умолчанию true).
+  pub use_shared_storage: bool,
 }
 
 impl SwarmObject {
   pub fn new(username: String) -> Self {
     Self {
       username,
-      uuid: None,
+      uuid: Uuid::nil(),
       plugins: BotPlugins::default(),
+      use_shared_storage: true,
     }
   }
 
   /// Метод установки UUID.
   pub fn set_uuid(mut self, uuid: Uuid) -> Self {
-    self.uuid = Some(uuid);
+    self.uuid = uuid;
     self
   }
 

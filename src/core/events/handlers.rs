@@ -4,33 +4,33 @@ use std::sync::Arc;
 
 use azalea_protocol::packets::game::ClientboundGamePacket;
 
-use super::BotEvent;
-use crate::core::bot::BotTerminal;
+use crate::core::common::BotTerminal;
+use crate::core::events::BotEvent;
 
 pub type AsyncEventHandler =
-  Box<dyn Fn(BotTerminal, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+  Box<dyn Fn(Arc<BotTerminal>, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 pub struct EventHandler {
   login_finished_handler:
-    Option<Arc<dyn Fn(BotTerminal) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   config_finished_handler:
-    Option<Arc<dyn Fn(BotTerminal) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   spawn_handler:
-    Option<Arc<dyn Fn(BotTerminal) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   death_handler:
-    Option<Arc<dyn Fn(BotTerminal) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   disconnect_handler:
-    Option<Arc<dyn Fn(BotTerminal) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   chat_handler: Option<
     Arc<
-      dyn Fn(BotTerminal, Option<uuid::Uuid>, String) -> Pin<Box<dyn Future<Output = ()> + Send>>
+      dyn Fn(Arc<BotTerminal>, Option<uuid::Uuid>, String) -> Pin<Box<dyn Future<Output = ()> + Send>>
         + Send
         + Sync,
     >,
   >,
   packet_handler: Option<
     Arc<
-      dyn Fn(BotTerminal, ClientboundGamePacket) -> Pin<Box<dyn Future<Output = ()> + Send>>
+      dyn Fn(Arc<BotTerminal>, ClientboundGamePacket) -> Pin<Box<dyn Future<Output = ()> + Send>>
         + Send
         + Sync,
     >,
@@ -52,7 +52,7 @@ impl EventHandler {
 
   pub fn on_login_finished<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
     self.login_finished_handler = Some(Arc::new(move |terminal| Box::pin(handler(terminal))));
@@ -60,7 +60,7 @@ impl EventHandler {
 
   pub fn on_config_finished<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
     self.config_finished_handler = Some(Arc::new(move |terminal| Box::pin(handler(terminal))));
@@ -68,7 +68,7 @@ impl EventHandler {
 
   pub fn on_spawn<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
     self.spawn_handler = Some(Arc::new(move |terminal| Box::pin(handler(terminal))));
@@ -76,7 +76,7 @@ impl EventHandler {
 
   pub fn on_death<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
     self.death_handler = Some(Arc::new(move |terminal| Box::pin(handler(terminal))));
@@ -84,7 +84,7 @@ impl EventHandler {
 
   pub fn on_disconnect<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
     self.disconnect_handler = Some(Arc::new(move |terminal| Box::pin(handler(terminal))));
@@ -92,7 +92,7 @@ impl EventHandler {
 
   pub fn on_chat<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal, Option<uuid::Uuid>, String) -> Fut + Send + Sync + 'static,
+    F: Fn(Arc<BotTerminal>, Option<uuid::Uuid>, String) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
     self.chat_handler = Some(Arc::new(move |terminal, uuid, message| {
@@ -102,7 +102,7 @@ impl EventHandler {
 
   pub fn on_packet<F, Fut>(&mut self, handler: F)
   where
-    F: Fn(BotTerminal, azalea_protocol::packets::game::ClientboundGamePacket) -> Fut
+    F: Fn(Arc<BotTerminal>, azalea_protocol::packets::game::ClientboundGamePacket) -> Fut
       + Send
       + Sync
       + 'static,
@@ -114,7 +114,7 @@ impl EventHandler {
   }
 
   /// Метод триггеринга определённого события.
-  pub async fn trigger(&self, terminal: BotTerminal, event: BotEvent) {
+  pub async fn trigger(&self, terminal: Arc<BotTerminal>, event: BotEvent) {
     match event {
       BotEvent::LoginFinished => {
         if let Some(handler) = &self.login_finished_handler {

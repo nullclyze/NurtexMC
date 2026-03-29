@@ -11,7 +11,8 @@ use azalea_protocol::packets::game::{
   ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem,
 };
 
-use crate::core::bot::{Bot, BotCommand};
+use crate::core::bot::Bot;
+use crate::core::common::BotCommand;
 use crate::core::data::{Entity, PlayerInfo};
 use crate::core::events::BotEvent;
 
@@ -42,8 +43,6 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
 
   match packet {
     ClientboundGamePacket::AddEntity(p) => {
-      let storage = &mut bot.storage;
-
       let entity = Entity {
         entity_type: p.entity_type.to_string(),
         uuid: p.uuid,
@@ -54,13 +53,30 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         player_info: None,
       };
 
-      storage.entities.insert(p.id.0, entity);
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            guard.entities.insert(p.id.0, entity);
+          }
+          Err(_) => {}
+        }
+      } else {
+        bot.storage.entities.insert(p.id.0, entity);
+      }
     }
     ClientboundGamePacket::RemoveEntities(p) => {
-      let storage = &mut bot.storage;
+      let mut ids = Vec::new();
+      p.entity_ids.iter().for_each(|id| ids.push(id.0));
 
-      for entity_id in p.entity_ids {
-        storage.entities.remove(&entity_id.0);
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            guard.entities.retain(|id, _| !ids.contains(id));
+          }
+          Err(_) => {}
+        }
+      } else {
+        bot.storage.entities.retain(|id, _| !ids.contains(id));
       }
     }
     ClientboundGamePacket::Login(p) => {
@@ -82,32 +98,75 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
       bot.emit_event(BotEvent::Spawn);
     }
     ClientboundGamePacket::MoveEntityPos(p) => {
-      if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
-        entity.position += p.delta.into();
-        entity.on_ground = p.on_ground;
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            if let Some(entity) = guard.entities.get_mut(&p.entity_id.0) {
+              entity.position += p.delta.into();
+              entity.on_ground = p.on_ground;
+            }
+          }
+          Err(_) => {}
+        }
+      } else {
+        if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+          entity.position += p.delta.into();
+          entity.on_ground = p.on_ground;
+        }
       }
     }
     ClientboundGamePacket::MoveEntityRot(p) => {
-      if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
-        entity.on_ground = p.on_ground;
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            if let Some(entity) = guard.entities.get_mut(&p.entity_id.0) {
+              entity.on_ground = p.on_ground;
 
-        let old_y_rot = entity.look_direction.y_rot();
-        let old_x_rot = entity.look_direction.x_rot();
+              let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
+              let x_rot = entity.look_direction.x_rot() + p.x_rot as f32;
 
-        entity.look_direction =
-          LookDirection::new(old_y_rot + p.y_rot as f32, old_x_rot + p.x_rot as f32);
+              entity.look_direction = LookDirection::new(y_rot, x_rot);
+            }
+          }
+          Err(_) => {}
+        }
+      } else {
+        if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+          entity.on_ground = p.on_ground;
+
+          let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
+          let x_rot = entity.look_direction.x_rot() + p.x_rot as f32;
+
+          entity.look_direction = LookDirection::new(y_rot, x_rot);
+        }
       }
     }
     ClientboundGamePacket::MoveEntityPosRot(p) => {
-      if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
-        entity.position += p.delta.into();
-        entity.on_ground = p.on_ground;
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            if let Some(entity) = guard.entities.get_mut(&p.entity_id.0) {
+              entity.position += p.delta.into();
+              entity.on_ground = p.on_ground;
 
-        let old_y_rot = entity.look_direction.y_rot();
-        let old_x_rot = entity.look_direction.x_rot();
+              let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
+              let x_rot = entity.look_direction.x_rot() + p.x_rot as f32;
 
-        entity.look_direction =
-          LookDirection::new(old_y_rot + p.y_rot as f32, old_x_rot + p.x_rot as f32);
+              entity.look_direction = LookDirection::new(y_rot, x_rot);
+            }
+          }
+          Err(_) => {}
+        }
+      } else {
+        if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+          entity.position += p.delta.into();
+          entity.on_ground = p.on_ground;
+
+          let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
+          let x_rot = entity.look_direction.x_rot() + p.x_rot as f32;
+
+          entity.look_direction = LookDirection::new(y_rot, x_rot);
+        }
       }
     }
     ClientboundGamePacket::PlayerInfoUpdate(p) => {
@@ -117,20 +176,41 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         if entry.profile.name == bot.username {
           profile.ping = entry.latency;
         } else {
-          let storage = &mut bot.storage;
+          if let Some(shared_storage) = &bot.shared_storage {
+            match shared_storage.try_write() {
+              Ok(mut guard) => {
+                for (_id, entity) in &mut guard.entities {
+                  if entity.uuid != entry.profile.uuid {
+                    continue;
+                  }
 
-          for (_id, entity) in &mut storage.entities {
-            if entity.uuid != entry.profile.uuid {
-              continue;
+                  let player_info = PlayerInfo {
+                    username: entry.profile.name.clone(),
+                    game_mode: entry.game_mode.name().to_string(),
+                    ping: entry.latency,
+                  };
+
+                  entity.player_info = Some(player_info);
+                }
+              }
+              Err(_) => {}
             }
+          } else {
+            let storage = &mut bot.storage;
 
-            let player_info = PlayerInfo {
-              username: entry.profile.name.clone(),
-              game_mode: entry.game_mode.name().to_string(),
-              ping: entry.latency,
-            };
+            for (_id, entity) in &mut storage.entities {
+              if entity.uuid != entry.profile.uuid {
+                continue;
+              }
 
-            entity.player_info = Some(player_info);
+              let player_info = PlayerInfo {
+                username: entry.profile.name.clone(),
+                game_mode: entry.game_mode.name().to_string(),
+                ping: entry.latency,
+              };
+
+              entity.player_info = Some(player_info);
+            }
           }
         }
       }
@@ -168,17 +248,42 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         let physics = &mut bot.components.physics;
         physics.velocity = p.delta.to_vec3();
       } else {
-        if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
-          entity.velocity = p.delta.to_vec3();
+        if let Some(shared_storage) = &bot.shared_storage {
+          match shared_storage.try_write() {
+            Ok(mut guard) => {
+              if let Some(entity) = guard.entities.get_mut(&p.id.0) {
+                entity.velocity = p.delta.to_vec3();
+              }
+            }
+            Err(_) => {}
+          }
+        } else {
+          if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
+            entity.velocity = p.delta.to_vec3();
+          }
         }
       }
     }
     ClientboundGamePacket::EntityPositionSync(p) => {
-      if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
-        entity.position = p.values.pos;
-        entity.velocity = p.values.delta;
-        entity.look_direction = p.values.look_direction;
-        entity.on_ground = p.on_ground;
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            if let Some(entity) = guard.entities.get_mut(&p.id.0) {
+              entity.position = p.values.pos;
+              entity.velocity = p.values.delta;
+              entity.look_direction = p.values.look_direction;
+              entity.on_ground = p.on_ground;
+            }
+          }
+          Err(_) => {}
+        }
+      } else {
+        if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
+          entity.position = p.values.pos;
+          entity.velocity = p.values.delta;
+          entity.look_direction = p.values.look_direction;
+          entity.on_ground = p.on_ground;
+        }
       }
     }
     ClientboundGamePacket::KeepAlive(p) => {
