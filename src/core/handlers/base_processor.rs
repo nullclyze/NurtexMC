@@ -5,7 +5,7 @@ use azalea_protocol::connect::Connection;
 use azalea_protocol::packets::config::{ClientboundConfigPacket, ServerboundConfigPacket};
 use azalea_protocol::packets::login::{ClientboundLoginPacket, ServerboundLoginPacket};
 
-/// Функция обработки всего цикла пакетов в состоянии Login.
+/// Функция обработки всего цикла пакетов в состоянии Login
 pub async fn handle_login(
   conn: &mut Connection<ClientboundLoginPacket, ServerboundLoginPacket>,
 ) -> io::Result<()> {
@@ -55,7 +55,7 @@ pub async fn handle_login(
   }
 }
 
-/// Функция обработки всего цикла пакетов в состоянии Configuration.
+/// Функция обработки всего цикла пакетов в состоянии Configuration
 pub async fn handle_configuration(
   conn: &mut Connection<ClientboundConfigPacket, ServerboundConfigPacket>,
   client_information: ClientInformation,

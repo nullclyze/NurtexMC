@@ -1,23 +1,26 @@
 use std::io::{self, Error, ErrorKind};
+use std::pin::Pin;
 
-use azalea_core::direction::Direction;
-use azalea_core::position::{BlockPos, Vec3};
+use azalea_core::position::Vec3;
 use azalea_entity::LookDirection;
-use azalea_protocol::common::movements::MoveFlags;
-use azalea_protocol::packets::game::s_player_action::Action;
 use azalea_protocol::packets::game::{
   ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundClientCommand,
-  ServerboundGamePacket, ServerboundKeepAlive, ServerboundMovePlayerPos, ServerboundMovePlayerRot,
-  ServerboundPlayerAction, ServerboundPong, ServerboundSwing, ServerboundUseItem,
+  ServerboundGamePacket, ServerboundKeepAlive, ServerboundPong,
 };
 
 use crate::core::bot::Bot;
-use crate::core::common::BotCommand;
 use crate::core::data::{Entity, PlayerInfo};
 use crate::core::events::{BotEvent, ChatPayload};
 use crate::utils::timestamp;
 
-/// Дефолтный обработчик пакетов.
+/// Тип обработчика пакетов
+pub type PacketProcessorFn =
+  for<'a> fn(
+    &'a mut Bot,
+    ClientboundGamePacket,
+  ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
+
+/// Дефолтный обработчик пакетов
 pub fn default_packet_processor(
   bot: &mut Bot,
   packet: ClientboundGamePacket,
@@ -25,15 +28,7 @@ pub fn default_packet_processor(
   Box::pin(process_packet(bot, packet))
 }
 
-/// Дефолтный обработчик команд.
-pub fn default_command_processor(
-  bot: &mut Bot,
-  command: BotCommand,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + '_>> {
-  Box::pin(process_command(bot, command))
-}
-
-/// Функция обработки пакета (в состоянии Play).
+/// Функция обработки пакета (в состоянии Play)
 async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
     return Err(Error::new(
@@ -62,7 +57,12 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           Err(_) => {}
         }
       } else {
-        bot.storage.entities.insert(p.id.0, entity);
+        bot
+          .local_storage
+          .write()
+          .await
+          .entities
+          .insert(p.id.0, entity);
       }
     }
     ClientboundGamePacket::RemoveEntities(p) => {
@@ -77,7 +77,12 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           Err(_) => {}
         }
       } else {
-        bot.storage.entities.retain(|id, _| !ids.contains(id));
+        bot
+          .local_storage
+          .write()
+          .await
+          .entities
+          .retain(|id, _| !ids.contains(id));
       }
     }
     ClientboundGamePacket::Login(p) => {
@@ -110,7 +115,13 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           Err(_) => {}
         }
       } else {
-        if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+        if let Some(entity) = bot
+          .local_storage
+          .write()
+          .await
+          .entities
+          .get_mut(&p.entity_id.0)
+        {
           entity.position += p.delta.into();
           entity.on_ground = p.on_ground;
         }
@@ -132,7 +143,13 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           Err(_) => {}
         }
       } else {
-        if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+        if let Some(entity) = bot
+          .local_storage
+          .write()
+          .await
+          .entities
+          .get_mut(&p.entity_id.0)
+        {
           entity.on_ground = p.on_ground;
 
           let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
@@ -159,7 +176,13 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           Err(_) => {}
         }
       } else {
-        if let Some(entity) = bot.storage.entities.get_mut(&p.entity_id.0) {
+        if let Some(entity) = bot
+          .local_storage
+          .write()
+          .await
+          .entities
+          .get_mut(&p.entity_id.0)
+        {
           entity.position += p.delta.into();
           entity.on_ground = p.on_ground;
 
@@ -197,9 +220,9 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
               Err(_) => {}
             }
           } else {
-            let storage = &mut bot.storage;
+            let storage = &mut bot.local_storage;
 
-            for (_id, entity) in &mut storage.entities {
+            for (_id, entity) in &mut storage.write().await.entities {
               if entity.uuid != entry.profile.uuid {
                 continue;
               }
@@ -259,7 +282,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
             Err(_) => {}
           }
         } else {
-          if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
+          if let Some(entity) = bot.local_storage.write().await.entities.get_mut(&p.id.0) {
             entity.velocity = p.delta.to_vec3();
           }
         }
@@ -279,7 +302,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           Err(_) => {}
         }
       } else {
-        if let Some(entity) = bot.storage.entities.get_mut(&p.id.0) {
+        if let Some(entity) = bot.local_storage.write().await.entities.get_mut(&p.id.0) {
           entity.position = p.values.pos;
           entity.velocity = p.values.delta;
           entity.look_direction = p.values.look_direction;
@@ -333,94 +356,6 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
       ));
     }
     _ => return Ok(true),
-  }
-
-  Ok(true)
-}
-
-/// Функция обработки внешней команды.
-async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool> {
-  let Some(conn) = &mut bot.connection else {
-    return Err(Error::new(
-      ErrorKind::NotConnected,
-      format!("Bot {} connection could not be obtained", bot.username),
-    ));
-  };
-
-  match command {
-    BotCommand::Chat(message) => {
-      bot.chat(message).await?;
-    }
-    BotCommand::SetDirection { yaw, pitch } => {
-      conn
-        .write(ServerboundGamePacket::MovePlayerRot(
-          ServerboundMovePlayerRot {
-            look_direction: LookDirection::new(yaw, pitch),
-            flags: MoveFlags {
-              on_ground: bot.components.physics.on_ground,
-              horizontal_collision: false,
-            },
-          },
-        ))
-        .await?;
-    }
-    BotCommand::SetPosition { x, y, z } => {
-      conn
-        .write(ServerboundGamePacket::MovePlayerPos(
-          ServerboundMovePlayerPos {
-            pos: Vec3::new(x, y, z),
-            flags: MoveFlags {
-              on_ground: bot.components.physics.on_ground,
-              horizontal_collision: false,
-            },
-          },
-        ))
-        .await?;
-    }
-    BotCommand::SwingArm(hand) => {
-      conn
-        .write(ServerboundGamePacket::Swing(ServerboundSwing { hand }))
-        .await?;
-    }
-    BotCommand::StartUseItem(hand) => {
-      let look_direction = bot.components.physics.look_direction;
-
-      conn
-        .write(ServerboundGamePacket::UseItem(ServerboundUseItem {
-          hand: hand,
-          seq: 0,
-          y_rot: look_direction.y_rot(),
-          x_rot: look_direction.x_rot(),
-        }))
-        .await?;
-    }
-    BotCommand::ReleaseUseItem => {
-      conn
-        .write(ServerboundGamePacket::PlayerAction(
-          ServerboundPlayerAction {
-            action: Action::ReleaseUseItem,
-            pos: BlockPos::new(0, 0, 0),
-            direction: Direction::Down,
-            seq: 0,
-          },
-        ))
-        .await?;
-    }
-    BotCommand::SendPacket(packet) => {
-      conn.write(packet).await?;
-    }
-    BotCommand::Disconnect => {
-      bot.disconnect().await?;
-      bot.emit_event(BotEvent::Disconnect);
-      return Ok(false);
-    }
-    BotCommand::Reconnect {
-      server_host,
-      server_port,
-      interval,
-    } => {
-      bot.reconnect(&server_host, server_port, interval).await?;
-    }
   }
 
   Ok(true)

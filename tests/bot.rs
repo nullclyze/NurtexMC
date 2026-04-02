@@ -3,25 +3,20 @@ mod tests {
   use std::io;
 
   use nurtex::core::bot::Bot;
-  use nurtex::core::events::EventHandler;
+  use nurtex::core::events::EventInvoker;
 
   #[tokio::test]
   async fn launch_bot() -> io::Result<()> {
     let bot = Bot::new("NurtexBot");
 
-    let mut event_handler = EventHandler::new();
+    let mut event_invoker = EventInvoker::new();
 
-    event_handler.on_spawn(|terminal| async move {
-      let username = &terminal.receiver;
-      println!("Bot {} spawned!", username);
-    });
-
-    event_handler.on_chat(|_terminal, payload| async move {
-      println!("[{}] Chat message: {}", payload.timestamp, payload.message);
+    event_invoker.on_spawn(|terminal| async move {
+      println!("Бот {} заспавнился!", terminal.receiver);
     });
 
     bot
-      .set_event_handler(event_handler)
+      .set_event_invoker(event_invoker)
       .connect_to("localhost", 25565)
       .await?;
 

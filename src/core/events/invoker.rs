@@ -5,10 +5,10 @@ use std::sync::Arc;
 use crate::core::common::BotTerminal;
 use crate::core::events::{BotEvent, ChatPayload, PacketPayload};
 
-pub type AsyncEventHandler =
+pub type AsyncEventInvoker =
   Box<dyn Fn(Arc<BotTerminal>, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
-pub struct EventHandler {
+pub struct EventInvoker {
   login_finished_handler:
     Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
   config_finished_handler:
@@ -35,7 +35,7 @@ pub struct EventHandler {
   >,
 }
 
-impl EventHandler {
+impl EventInvoker {
   pub fn new() -> Self {
     Self {
       login_finished_handler: None,

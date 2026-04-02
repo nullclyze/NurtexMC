@@ -2,7 +2,6 @@
 
 use std::io::{self, Error, ErrorKind};
 use std::net::ToSocketAddrs;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use azalea_protocol::common::client_information::{ClientInformation, ParticleStatus};
@@ -16,45 +15,52 @@ use azalea_protocol::packets::login::s_hello::ServerboundHello;
 use azalea_protocol::packets::login::s_login_acknowledged::ServerboundLoginAcknowledged;
 use azalea_protocol::packets::{ClientIntention, PROTOCOL_VERSION};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
+use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::core::common::{BotCommand, BotComponents, BotPlugins, BotStatus, BotTerminal};
 use crate::core::components::{Physics, Profile, State};
-use crate::core::data::Storage;
-use crate::core::default::{default_command_processor, default_packet_processor};
-use crate::core::events::{BotEvent, EventHandler, PacketPayload};
-use crate::core::handler::{handle_configuration, handle_login};
-use crate::core::swarm::SharedStorage;
+use crate::core::data::{Storage, StorageLock};
+use crate::core::events::{BotEvent, EventInvoker, PacketPayload};
+use crate::core::handlers::base_processor::{handle_configuration, handle_login};
+use crate::core::handlers::command_processor::{CommandProcessorFn, default_command_processor};
+use crate::core::handlers::packet_processor::{PacketProcessorFn, default_packet_processor};
 use crate::utils::{sleep, timestamp};
 
-pub type PacketProcessorFn =
-  for<'a> fn(
-    &'a mut Bot,
-    ClientboundGamePacket,
-  ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
-pub type CommandProcessorFn =
-  for<'a> fn(
-    &'a mut Bot,
-    BotCommand,
-  ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
-
 pub struct Bot {
+  /// Статус подключения бота (offline / connecting / online)
   pub status: BotStatus,
+
+  /// Терминал бота, используется для управления
   pub terminal: Arc<BotTerminal>,
+
+  /// Юзернейм бота
   pub username: String,
+
+  /// UUID бота, по умолчанию нулевой
   pub uuid: Uuid,
+
+  /// Подключение бота в состоянии Play
   pub connection: Option<Connection<ClientboundGamePacket, ServerboundGamePacket>>,
+
+  /// Компоненты бота
   pub components: BotComponents,
+
+  /// Плагины бота и их настройки
   pub plugins: BotPlugins,
-  pub storage: Storage,
-  pub shared_storage: Option<SharedStorage>,
+
+  /// Local-хранилище бота
+  pub local_storage: StorageLock,
+
+  /// Shared-хранилище бота (опциональное)
+  pub shared_storage: Option<StorageLock>,
+
   client_information: ClientInformation,
   command_receiver: mpsc::Receiver<BotCommand>,
   packet_processor: PacketProcessorFn,
   command_processor: CommandProcessorFn,
-  event_handler: Arc<EventHandler>,
+  event_invoker: Arc<EventInvoker>,
 }
 
 impl Bot {
@@ -70,7 +76,7 @@ impl Bot {
       username: username.to_string(),
       uuid: Uuid::nil(),
       connection: None,
-      storage: Storage::new(),
+      local_storage: Arc::new(RwLock::new(Storage::new())),
       shared_storage: None,
       components: BotComponents {
         physics: Physics::default(),
@@ -85,7 +91,7 @@ impl Bot {
       command_receiver: receiver,
       packet_processor: default_packet_processor,
       command_processor: default_command_processor,
-      event_handler: Arc::new(EventHandler::new()),
+      event_invoker: Arc::new(EventInvoker::new()),
     };
 
     bot
@@ -105,53 +111,54 @@ impl Bot {
     self
   }
 
-  /// Метод установки информации клиента.
+  /// Метод установки информации клиента
   pub fn set_information(mut self, information: ClientInformation) -> Self {
     self.client_information = information;
     self
   }
 
-  /// Метод установки плагинов бота.
+  /// Метод установки плагинов бота
   pub fn set_plugins(mut self, plugins: BotPlugins) -> Self {
     self.plugins = plugins;
     self
   }
 
-  /// Метод установки shared-хранилища.
-  pub fn set_shared_storage(mut self, storage: SharedStorage) -> Self {
+  /// Метод установки shared-хранилища
+  pub fn set_shared_storage(mut self, storage: StorageLock) -> Self {
     self.shared_storage = Some(storage);
     self
   }
 
-  /// Метод установки обработчика пакетов.
+  /// Метод установки обработчика пакетов
   pub fn set_packet_processor(mut self, processor: PacketProcessorFn) -> Self {
     self.packet_processor = processor;
     self
   }
 
-  /// Метод установки обработчика команд.
+  /// Метод установки обработчика команд
   pub fn set_command_processor(mut self, processor: CommandProcessorFn) -> Self {
     self.command_processor = processor;
     self
   }
 
-  /// Метод установки обработчика событий.
-  pub fn set_event_handler(mut self, handler: EventHandler) -> Self {
-    self.event_handler = Arc::new(handler);
+  /// Метод установки инициатора событий
+  pub fn set_event_invoker(mut self, invoker: EventInvoker) -> Self {
+    self.event_invoker = Arc::new(invoker);
     self
   }
 
-  /// Метод отправки события.
+  /// Метод отправки события
   pub fn emit_event(&self, event: BotEvent) {
-    let handler = Arc::clone(&self.event_handler);
-    let terminal = self.terminal.clone();
+    let invoker = Arc::clone(&self.event_invoker);
+
+    let terminal = Arc::clone(&self.terminal);
 
     tokio::spawn(async move {
-      handler.trigger(terminal, event).await;
+      invoker.trigger(terminal, event).await;
     });
   }
 
-  /// Метод создания соединения с сервером и запуска `event_loop`.
+  /// Метод создания соединения с сервером и запуска `event_loop`
   async fn start(&mut self, server_host: &str, server_port: u16) -> io::Result<()> {
     self.connection = None;
 
@@ -223,7 +230,7 @@ impl Bot {
     Ok(())
   }
 
-  /// Метод, который подключает бота к серверу, ловит его ошибки и корректно обрабатывает их.
+  /// Метод, который подключает бота к серверу, ловит его ошибки и корректно обрабатывает их
   pub async fn connect_to(&mut self, server_host: &str, server_port: u16) -> io::Result<()> {
     loop {
       match self.start(server_host, server_port).await {
@@ -255,12 +262,14 @@ impl Bot {
     Ok(())
   }
 
-  /// Метод основного цикла событий.
+  /// Метод основного цикла событий
   async fn event_loop(&mut self) -> io::Result<()> {
     let mut tick_interval = tokio::time::interval(tokio::time::Duration::from_millis(50));
     tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
+      // Проверка текущего статуса подключения.
+      // Если статус offline возвращаем Ok(()), чтобы избежать дублированных циклов событий
       if self.status != BotStatus::Online {
         return Ok(());
       }
@@ -270,6 +279,7 @@ impl Bot {
       };
 
       tokio::select! {
+        // Обработка пакета
         Ok(packet) = conn.read() => {
           self.emit_event(BotEvent::Packet(PacketPayload {
             packet: packet.clone(),
@@ -283,6 +293,7 @@ impl Bot {
           }
         }
 
+        // Обработка внешней команды
         Some(command) = self.command_receiver.recv() => {
           match (self.command_processor)(self, command).await {
             Ok(true) => continue,
@@ -291,6 +302,7 @@ impl Bot {
           }
         }
 
+        // Обработка физического тика
         _ = tick_interval.tick() => {
           if let Err(e) = self.tick().await {
             return Err(e);
@@ -300,7 +312,7 @@ impl Bot {
     }
   }
 
-  /// Метод проверки некого Entity ID на сходство с Entity ID текущего бота.
+  /// Метод проверки некого Entity ID на сходство с Entity ID текущего бота
   pub fn is_this_my_entity_id(&self, id: i32) -> bool {
     if let Some(entity_id) = self.components.profile.entity_id {
       if id == entity_id {
@@ -311,7 +323,7 @@ impl Bot {
     false
   }
 
-  /// Метод выполнения определённых операций в каждый физический тик.
+  /// Метод выполнения определённых операций в каждый физический тик
   async fn tick(&mut self) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
       return Err(Error::new(
@@ -327,12 +339,12 @@ impl Bot {
     Ok(())
   }
 
-  /// Метод очистки данных бота.
-  pub fn clear(&mut self) {
-    self.storage.entities.clear();
+  /// Метод очистки данных бота
+  pub async fn clear(&mut self) {
+    self.local_storage.write().await.entities.clear();
   }
 
-  /// Метод закрытия TcpStream (отключение от сервера).
+  /// Метод закрытия TcpStream (отключение от сервера)
   pub async fn disconnect(&mut self) -> io::Result<()> {
     let Some(conn) = self.connection.take() else {
       return Err(Error::new(
@@ -357,12 +369,12 @@ impl Bot {
 
     stream.shutdown().await?;
 
-    self.clear();
+    self.clear().await;
 
     Ok(())
   }
 
-  /// Метод переподключения бота к серверу.
+  /// Метод переподключения бота к серверу
   pub async fn reconnect(
     &mut self,
     server_host: &str,
