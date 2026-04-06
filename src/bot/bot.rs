@@ -7,9 +7,7 @@ use std::time::Duration;
 
 use azalea_protocol::connect::{Connection, Proxy};
 use azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate;
-use azalea_protocol::packets::game::{
-  ClientboundGamePacket, ServerboundChat, ServerboundGamePacket,
-};
+use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundChat, ServerboundGamePacket};
 use azalea_protocol::packets::handshake::s_intention::ServerboundIntention;
 use azalea_protocol::packets::handshake::{ClientboundHandshakePacket, ServerboundHandshakePacket};
 use azalea_protocol::packets::login::s_hello::ServerboundHello;
@@ -19,32 +17,43 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
-use uuid::Uuid;
 
-use crate::core::common::{
-  BotCommand, BotComponents, BotInformation, BotPlugins, BotStatus, BotTerminal,
-};
-use crate::core::components::{Physics, Profile, State};
-use crate::core::data::{Storage, StorageLock};
-use crate::core::events::{BotEvent, EventInvoker, PacketPayload};
-use crate::core::handlers::base_processor::{handle_configuration, handle_login};
-use crate::core::handlers::command_processor::{CommandProcessorFn, default_command_processor};
-use crate::core::handlers::packet_processor::{PacketProcessorFn, default_packet_processor};
-use crate::events::DisconnectPayload;
+use crate::bot::account::BotAccount;
+use crate::bot::options::{BotComponents, BotInformation, BotPlugins, BotStatus};
+use crate::bot::components::{Physics, Profile, State};
+use crate::bot::terminal::{BotCommand, BotTerminal};
+use crate::bot::world::{Storage, StorageLock};
+use crate::bot::events::DisconnectPayload;
+use crate::bot::events::{BotEvent, EventInvoker, PacketPayload};
+use crate::bot::handlers::base::{process_login, process_configuration};
+use crate::bot::handlers::custom::command::{CommandProcessorFn, default_command_processor};
+use crate::bot::handlers::custom::packet::{PacketProcessorFn, default_packet_processor};
 use crate::utils::time::{sleep, timestamp};
 
+/// Основная структура бота, состояния, компоненты, методы подключения -
+/// всё хранится именно здесь. Данный объект содержит в себе всю
+/// информацию о мире (`Storage`), но при запуске роя бот будет отправлять
+/// все данные в `SharedStorage` (если в `Swarm` значение у 
+/// флага `use_shared_storage` является `true` для этого бота).
+/// 
+/// Пример создания и подключения бота к серверу:
+/// ```rust, ignore
+/// // Создаём бота
+/// let account = BotAccount::new("NurtexBot");
+/// let bot = Bot::create(account);
+/// 
+/// // Подключаем бота к серверу
+/// bot.connect_to("server.com", 25565).await?;
+/// ```
 pub struct Bot {
-  /// Статус подключения бота (offline / connecting / online)
+  /// Статус подключения бота
   pub status: BotStatus,
 
   /// Терминал бота, используется для управления
   pub terminal: Arc<BotTerminal>,
 
-  /// Юзернейм бота
-  pub username: String,
-
-  /// UUID бота, по умолчанию нулевой
-  pub uuid: Uuid,
+  /// Аккаунт бота
+  pub account: Arc<BotAccount>,
 
   /// Подключение бота в состоянии Play
   pub connection: Option<Connection<ClientboundGamePacket, ServerboundGamePacket>>,
@@ -71,17 +80,19 @@ pub struct Bot {
 }
 
 impl Bot {
-  pub fn new(username: &str) -> Self {
+  /// Метод создания нового бота
+  pub fn create(account: BotAccount) -> Self {
     let (sender, receiver) = mpsc::channel(50);
+
+    let bot_account = Arc::new(account);
 
     Self {
       status: BotStatus::Offline,
       terminal: Arc::new(BotTerminal {
-        receiver: username.to_string(),
+        account: Arc::clone(&bot_account),
         cmd: sender,
       }),
-      username: username.to_string(),
-      uuid: Uuid::nil(),
+      account: bot_account,
       connection: None,
       local_storage: Arc::new(RwLock::new(Storage::new())),
       shared_storage: None,
@@ -107,12 +118,6 @@ impl Bot {
     let port = server_port;
 
     tokio::spawn(async move { self.connect_to(&host, port).await })
-  }
-
-  /// Метод установки UUID
-  pub fn set_uuid(mut self, uuid: Uuid) -> Self {
-    self.uuid = uuid;
-    self
   }
 
   /// Метод установки таймаута подключения
@@ -200,9 +205,7 @@ impl Bot {
 
     let Some(address) = (match address_string.to_socket_addrs() {
       Ok(mut i) => i.next(),
-      Err(err) => {
-        return Err(err);
-      }
+      Err(err) => return Err(err),
     }) else {
       return Err(io::Error::new(
         io::ErrorKind::AddrNotAvailable,
@@ -257,18 +260,18 @@ impl Bot {
     let mut conn = conn.login();
     conn
       .write(ServerboundHello {
-        name: self.username.clone(),
-        profile_id: self.uuid,
+        name: self.account.username.clone(),
+        profile_id: self.account.uuid,
       })
       .await?;
 
-    handle_login(&mut conn).await?;
+    process_login(&mut conn).await?;
     conn.write(ServerboundLoginAcknowledged {}).await?;
 
     self.emit_event(BotEvent::LoginFinished);
 
     let mut conn = conn.config();
-    handle_configuration(self, &mut conn).await?;
+    process_configuration(self, &mut conn).await?;
 
     self.emit_event(BotEvent::ConfigurationFinished);
 
@@ -333,7 +336,9 @@ impl Bot {
         // Обработка пакета
         result = conn.read() => {
           match result {
-            Ok(packet) => {
+            Ok(p) => {
+              let packet: Arc<ClientboundGamePacket> = Arc::new(p);
+
               self.emit_event(BotEvent::Packet(PacketPayload {
                 packet: packet.clone(),
                 timestamp: timestamp()
@@ -441,6 +446,7 @@ impl Bot {
     Ok(())
   }
 
+  /// Метод отправки сообщения в чат
   pub async fn chat(&mut self, message: impl Into<String>) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
       return Err(Error::new(

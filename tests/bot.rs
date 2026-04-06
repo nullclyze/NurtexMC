@@ -2,30 +2,33 @@
 mod tests {
   use std::io;
 
+  use nurtex::bot::account::BotAccount;
   use nurtex::bot::Bot;
-  use nurtex::events::EventInvoker;
+  use nurtex::bot::events::EventInvoker;
 
   #[tokio::test]
   async fn launch_bot() -> io::Result<()> {
-    let bot = Bot::new("NurtexBot");
+    let account = BotAccount::new("NurtexBot");
+
+    let bot = Bot::create(account);
 
     let mut event_invoker = EventInvoker::new();
 
     event_invoker.on_spawn(|terminal| async move {
-      println!("Бот {} заспавнился!", terminal.receiver);
+      println!("Бот {} заспавнился!", terminal.account.username);
     });
 
     event_invoker.on_chat(|terminal, payload| async move {
       println!(
         "Бот {} получил сообщение: {}",
-        terminal.receiver, payload.message
+        terminal.account.username, payload.message
       );
     });
 
     event_invoker.on_disconnect(|terminal, payload| async move {
       println!(
         "Бот {} отключился по причине: {}",
-        terminal.receiver, payload.reason
+        terminal.account.username, payload.reason
       );
     });
 

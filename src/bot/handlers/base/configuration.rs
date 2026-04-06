@@ -2,68 +2,15 @@ use std::io::{self, Error, ErrorKind};
 
 use azalea_buf::AzaleaWrite;
 use azalea_protocol::connect::Connection;
-use azalea_protocol::packets::config::{ClientboundConfigPacket, ServerboundConfigPacket};
-use azalea_protocol::packets::login::{ClientboundLoginPacket, ServerboundLoginPacket};
+use azalea_protocol::packets::config::*;
 
-use crate::core::bot::Bot;
-
-/// Функция обработки всего цикла пакетов в состоянии Login
-pub async fn handle_login(
-  conn: &mut Connection<ClientboundLoginPacket, ServerboundLoginPacket>,
-) -> io::Result<()> {
-  use azalea_protocol::packets::login::*;
-
-  loop {
-    let packet = match conn.read().await {
-      Ok(p) => p,
-      Err(_) => continue,
-    };
-
-    match packet {
-      ClientboundLoginPacket::Hello(p) => {
-        let e = azalea_crypto::encrypt(&p.public_key, &p.challenge).unwrap();
-
-        conn
-          .write(ServerboundKey {
-            key_bytes: e.encrypted_public_key,
-            encrypted_challenge: e.encrypted_challenge,
-          })
-          .await?;
-
-        conn.set_encryption_key(e.secret_key);
-      }
-      ClientboundLoginPacket::LoginCompression(p) => {
-        conn.set_compression_threshold(p.compression_threshold);
-      }
-      ClientboundLoginPacket::LoginFinished(_p) => {
-        return Ok(());
-      }
-      ClientboundLoginPacket::LoginDisconnect(p) => {
-        return Err(Error::new(
-          ErrorKind::ConnectionAborted,
-          format!("Disconnected (Login): {}", p.reason.to_string()),
-        ));
-      }
-      ClientboundLoginPacket::CookieRequest(p) => {
-        conn
-          .write(ServerboundCookieResponse {
-            key: p.key,
-            payload: None,
-          })
-          .await?;
-      }
-      _ => {}
-    }
-  }
-}
+use crate::bot::Bot;
 
 /// Функция обработки всего цикла пакетов в состоянии Configuration
-pub async fn handle_configuration(
+pub async fn process_configuration(
   bot: &mut Bot,
   conn: &mut Connection<ClientboundConfigPacket, ServerboundConfigPacket>,
 ) -> io::Result<()> {
-  use azalea_protocol::packets::config::*;
-
   let info = bot.get_information_ref();
 
   let mut brand_data = Vec::new();

@@ -4,19 +4,26 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
 
-use crate::core::swarm::{SharedSwarm, Swarm, SwarmObject};
+use crate::bot::Bot;
+use crate::bot::account::BotAccount;
+use crate::swarm::{SharedSwarm, Swarm, SwarmObject};
 use crate::utils::time::sleep;
 
-pub use core::*;
-pub use utils::*;
+pub mod bot;
+pub mod swarm;
+pub mod utils;
 
-mod core;
 pub mod export;
-mod utils;
 
-/// Вспомогательная функция создание роя ботов.
+/// Вспомогательная функция создание бота
+pub fn create_bot(username: &str) -> Bot {
+  let account = BotAccount::new(username);
+  Bot::create(account)
+}
+
+/// Вспомогательная функция создание роя ботов
 pub fn create_swarm(objects: Vec<SwarmObject>) -> Swarm {
-  let mut swarm = Swarm::new();
+  let mut swarm = Swarm::create();
 
   for object in objects {
     swarm.add_object(object);
@@ -25,12 +32,12 @@ pub fn create_swarm(objects: Vec<SwarmObject>) -> Swarm {
   swarm
 }
 
-/// Вспомогательная функция создание shared-роя ботов.
+/// Вспомогательная функция создание shared-роя ботов
 pub fn create_shared_swarm(objects: Vec<SwarmObject>) -> SharedSwarm {
   Arc::new(RwLock::new(create_swarm(objects)))
 }
 
-/// Неблокирующий запуск shared-роя ботов на сервер.
+/// Функция запуска shared-роя, неблокирующая поток на время запуска
 pub fn launch_shared_swarm(
   swarm: SharedSwarm,
   server_host: String,
@@ -38,15 +45,13 @@ pub fn launch_shared_swarm(
   join_delay: u64,
 ) {
   tokio::spawn(async move {
-    let bots = {
-      let mut swarm_guard = swarm.write().await;
-      std::mem::take(&mut swarm_guard.bots)
-    };
+    let bots = std::mem::take(&mut swarm.write().await.bots);
 
     let mut handles = Vec::new();
 
     for bot in bots {
       let handle = bot.spawn(&server_host, server_port);
+
       handles.push(handle);
 
       if join_delay > 0 {
@@ -61,12 +66,9 @@ pub fn launch_shared_swarm(
   });
 }
 
-/// Вспомогательная функция уничтожения shared-роя с таймаутом.
-pub async fn destroy_shared_swarm(
-  swarm: SharedSwarm,
-  timeout_duration: Duration,
-) -> std::io::Result<()> {
-  match timeout(timeout_duration, swarm.write()).await {
+/// Вспомогательная функция уничтожения shared-роя
+pub async fn destroy_shared_swarm(swarm: SharedSwarm) -> std::io::Result<()> {
+  match timeout(Duration::from_secs(5), swarm.write()).await {
     Ok(mut guard) => {
       guard.destroy().await;
       Ok(())

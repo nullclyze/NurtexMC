@@ -2,9 +2,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::core::common::BotTerminal;
-use crate::core::events::{BotEvent, ChatPayload, PacketPayload};
-use crate::events::DisconnectPayload;
+use crate::bot::terminal::BotTerminal;
+use crate::bot::events::DisconnectPayload;
+use crate::bot::events::{BotEvent, ChatPayload, PacketPayload};
 
 pub type AsyncEventInvoker =
   Box<dyn Fn(Arc<BotTerminal>, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use azalea_protocol::packets::game::ClientboundGamePacket;
 use uuid::Uuid;
 
@@ -16,7 +18,7 @@ pub struct ChatPayload {
 
 #[derive(Debug, Clone)]
 pub struct PacketPayload {
-  pub packet: ClientboundGamePacket,
+  pub packet: Arc<ClientboundGamePacket>,
   pub timestamp: u64,
 }
 

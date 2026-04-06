@@ -6,17 +6,32 @@ use std::sync::Arc;
 use azalea_protocol::connect::Proxy;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use uuid::Uuid;
 
-use crate::common::BotInformation;
-use crate::core::bot::Bot;
-use crate::core::common::{BotCommand, BotPlugins, BotTerminal};
-use crate::core::data::{Storage, StorageLock};
-use crate::core::events::EventInvoker;
+use crate::bot::Bot;
+use crate::bot::account::BotAccount;
+use crate::bot::events::EventInvoker;
+use crate::bot::options::{BotInformation, BotPlugins};
+use crate::bot::terminal::{BotCommand, BotTerminal};
+use crate::bot::world::{Storage, StorageLock};
 use crate::utils::time::sleep;
 
+/// Рой ботов. Данная структура содержит
+/// в себе специальные shared-хранилища.
+/// Управлять ботами из роя напрямую **нельзя**,
+/// так как функция запуска забирает себе все
+/// объекты из `bots`. Для управления используются
+/// терминалы (поле `terminals`).
+/// 
+/// Пример параллельного управления ботами:
+/// ```rust, ignore
+/// // Проходимся по всем терминалам из роя
+/// swarm.read().await.for_each_parallel(|terminal| async move {
+///   // Отправляем сообщение в чат при помощи терминала
+///   terminal.chat("Привет, мир!").await;
+/// }).await;
+/// ```
 pub struct Swarm {
-  /// Список всех ботов, после запуска данный список будет пустым
+  /// Список всех ботов
   pub bots: Vec<Bot>,
 
   /// Список всех терминалов, используется для управления определёнными ботами
@@ -29,23 +44,78 @@ pub struct Swarm {
   pub shared_storage: StorageLock,
 }
 
+/// Вспомогательная обёртка для Swarm
 pub type SharedSwarm = Arc<RwLock<Swarm>>;
 
 impl Swarm {
-  pub fn new() -> Self {
+  /// Метод создания нового роя
+  pub fn create() -> Self {
     Self {
       bots: Vec::new(),
       terminals: Vec::new(),
       handles: Vec::new(),
-      shared_storage: Arc::new(RwLock::new(Storage::new())),
+      shared_storage: Arc::new(RwLock::new(Storage::new()))
+    }
+  }
+
+  /// Последовательный асинхронный for-each
+  pub async fn for_each_async<F, Fut>(&self, f: F)
+  where
+    F: Fn(Arc<BotTerminal>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+  {
+    for terminal in &self.terminals {
+      f(Arc::clone(terminal)).await;
+    }
+  }
+
+  /// Параллельный асинхронный for-each
+  pub async fn for_each_parallel<F, Fut>(&self, f: F)
+  where
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    let f = Arc::new(f);
+    let mut handles = Vec::with_capacity(self.bots.len());
+
+    for terminal in &self.terminals {
+      let f_clone = Arc::clone(&f);
+      let terminal_clone = Arc::clone(terminal);
+
+      let handle = tokio::spawn(async move {
+        f_clone(terminal_clone).await;
+      });
+
+      handles.push(handle);
+    }
+
+    for handle in handles {
+      handle.await.ok();
+    }
+  }
+
+  /// Параллельный синхронный for-each
+  pub fn for_each<F, Fut>(&self, f: F)
+  where
+    F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    let f = Arc::new(f);
+
+    for terminal in &self.terminals {
+      let f_clone = Arc::clone(&f);
+      let terminal_clone = Arc::clone(terminal);
+
+      tokio::spawn(async move {
+        f_clone(terminal_clone).await;
+      });
     }
   }
 
   /// Метод добавления объекта бота в рой
   pub fn add_object(&mut self, object: SwarmObject) {
-    let mut bot = Bot::new(&object.username)
+    let mut bot = Bot::create(object.account)
       .set_connection_timeout(object.connection_timeout)
-      .set_uuid(object.uuid)
       .set_plugins(object.plugins)
       .set_information(object.information);
 
@@ -67,18 +137,8 @@ impl Swarm {
     self.terminals.push(terminal);
   }
 
-  /// Метод получения бота по его юзернейму
-  pub fn get_bot(&self, username: &str) -> Option<&Bot> {
-    self.bots.iter().find(|b| b.username == username)
-  }
-
-  /// Метод получение мутабельной ссылки на бота по его юзернейму
-  pub fn get_bot_mut(&mut self, username: &str) -> Option<&mut Bot> {
-    self.bots.iter_mut().find(|b| b.username == username)
-  }
-
-  /// Метод, запускающий всех ботов из роя, который блокирует поток на время запуска
-  pub async fn launch_blocking(&mut self, server_host: &str, server_port: u16, join_delay: u64) {
+  /// Метод запуска роя, блокирующий поток на время запуска
+  pub async fn launch(&mut self, server_host: &str, server_port: u16, join_delay: u64) {
     let bots = std::mem::take(&mut self.bots);
 
     for bot in bots {
@@ -97,7 +157,7 @@ impl Swarm {
   /// Метод отправки команды определённому боту из роя
   pub async fn send_to(&self, username: &str, command: BotCommand) {
     for terminal in &self.terminals {
-      if terminal.receiver.as_str() == username {
+      if terminal.account.username.as_str() == username {
         terminal.send(command).await;
         break;
       }
@@ -137,10 +197,9 @@ impl Swarm {
 /// Данный объект **НЕ является** полноценным ботом для роя, это лишь обёртка над его поверхностной
 /// информацией (проще говоря опции).
 pub struct SwarmObject {
-  /// Юзернейм объекта бота
-  pub username: String,
+  /// Аккаунт объекта бота
+  pub account: BotAccount,
 
-  uuid: Uuid,
   plugins: BotPlugins,
   event_invoker: Option<EventInvoker>,
   connection_timeout: u64,
@@ -150,10 +209,10 @@ pub struct SwarmObject {
 }
 
 impl SwarmObject {
-  pub fn new(username: String) -> Self {
+  /// Метод создания нового объекта роя
+  pub fn new(account: BotAccount) -> Self {
     Self {
-      username,
-      uuid: Uuid::nil(),
+      account: account,
       plugins: BotPlugins::default(),
       event_invoker: None,
       connection_timeout: 14000,
@@ -161,12 +220,6 @@ impl SwarmObject {
       information: BotInformation::default(),
       use_shared_storage: true,
     }
-  }
-
-  /// Метод установки UUID
-  pub fn set_uuid(mut self, uuid: Uuid) -> Self {
-    self.uuid = uuid;
-    self
   }
 
   /// Метод установки плагинов

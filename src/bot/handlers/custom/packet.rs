@@ -1,7 +1,8 @@
 use std::io::{self, Error, ErrorKind};
 use std::pin::Pin;
+use std::sync::Arc;
 
-use azalea_core::position::Vec3;
+use azalea_core::position::{BlockPos, ChunkPos, Vec3};
 use azalea_entity::LookDirection;
 use azalea_protocol::packets::game::{
   ClientboundGamePacket, ServerboundAcceptTeleportation, ServerboundClientCommand,
@@ -9,29 +10,29 @@ use azalea_protocol::packets::game::{
   s_resource_pack::ServerboundResourcePack,
 };
 
-use crate::core::bot::Bot;
-use crate::core::data::{Entity, PlayerInfo};
-use crate::core::events::{BotEvent, ChatPayload};
-use crate::events::DisconnectPayload;
+use crate::bot::Bot;
+use crate::bot::world::{Entity, PlayerInfo};
+use crate::bot::events::DisconnectPayload;
+use crate::bot::events::{BotEvent, ChatPayload};
 use crate::utils::time::timestamp;
 
 /// Тип обработчика пакетов
 pub type PacketProcessorFn =
   for<'a> fn(
     &'a mut Bot,
-    ClientboundGamePacket,
+    Arc<ClientboundGamePacket>,
   ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
 
 /// Дефолтный обработчик пакетов
 pub fn default_packet_processor(
   bot: &mut Bot,
-  packet: ClientboundGamePacket,
+  packet: Arc<ClientboundGamePacket>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + '_>> {
   Box::pin(process_packet(bot, packet))
 }
 
 /// Функция обработки пакета (в состоянии Play)
-async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Result<bool> {
+async fn process_packet(bot: &mut Bot, packet: Arc<ClientboundGamePacket>) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
     return Err(Error::new(
       ErrorKind::NotConnected,
@@ -39,7 +40,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
     ));
   };
 
-  match packet {
+  match &*packet {
     ClientboundGamePacket::AddEntity(p) => {
       let entity = Entity {
         entity_type: p.entity_type.to_string(),
@@ -87,6 +88,75 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           .retain(|id, _| !ids.contains(id));
       }
     }
+    ClientboundGamePacket::LevelChunkWithLight(p) => {
+      let chunk_data = p.chunk_data.data.to_vec();
+      
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            guard.load_chunk(p.x, p.z, chunk_data);
+          }
+          Err(_) => {}
+        }
+      } else {
+        bot.local_storage.write().await.load_chunk(p.x, p.z, chunk_data);
+      }
+    }
+    ClientboundGamePacket::ForgetLevelChunk(p) => {
+      let chunk_pos = ChunkPos::new(p.pos.x, p.pos.z);
+      
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            guard.remove_chunk(&chunk_pos);
+          }
+          Err(_) => {}
+        }
+      } else {
+        bot.local_storage.write().await.remove_chunk(&chunk_pos);
+      }
+    }
+    ClientboundGamePacket::BlockUpdate(p) => {
+      let pos = BlockPos::new(p.pos.x, p.pos.y, p.pos.z);
+      let block_state = p.block_state.id() as u32;
+      
+      if let Some(shared_storage) = &bot.shared_storage {
+        match shared_storage.try_write() {
+          Ok(mut guard) => {
+            guard.set_block(&pos, block_state);
+          }
+          Err(_) => {}
+        }
+      } else {
+        bot.local_storage.write().await.set_block(&pos, block_state);
+      }
+    }
+    ClientboundGamePacket::SectionBlocksUpdate(p) => {
+      for state in &p.states {
+        let local_x = state.pos.x as i32;
+        let local_y = state.pos.y as i32;
+        let local_z = state.pos.z as i32;
+        
+        let pos = BlockPos::new(
+          (p.section_pos.x << 4) + local_x,
+          (p.section_pos.y << 4) + local_y,
+          (p.section_pos.z << 4) + local_z,
+        );
+        
+        let block_state = state.state.id() as u32;
+        
+        if let Some(shared_storage) = &bot.shared_storage {
+          match shared_storage.try_write() {
+            Ok(mut guard) => {
+              guard.set_block(&pos, block_state);
+            }
+            Err(_) => {}
+          }
+        } else {
+          bot.local_storage.write().await.set_block(&pos, block_state);
+        }
+      }
+    }
     ClientboundGamePacket::Login(p) => {
       let profile = &mut bot.components.profile;
 
@@ -110,7 +180,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         match shared_storage.try_write() {
           Ok(mut guard) => {
             if let Some(entity) = guard.entities.get_mut(&p.entity_id.0) {
-              entity.position += p.delta.into();
+              entity.position += p.delta.clone().into();
               entity.on_ground = p.on_ground;
             }
           }
@@ -124,7 +194,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           .entities
           .get_mut(&p.entity_id.0)
         {
-          entity.position += p.delta.into();
+          entity.position += p.delta.clone().into();
           entity.on_ground = p.on_ground;
         }
       }
@@ -166,7 +236,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
         match shared_storage.try_write() {
           Ok(mut guard) => {
             if let Some(entity) = guard.entities.get_mut(&p.entity_id.0) {
-              entity.position += p.delta.into();
+              entity.position += p.delta.clone().into();
               entity.on_ground = p.on_ground;
 
               let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
@@ -185,7 +255,7 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
           .entities
           .get_mut(&p.entity_id.0)
         {
-          entity.position += p.delta.into();
+          entity.position += p.delta.clone().into();
           entity.on_ground = p.on_ground;
 
           let y_rot = entity.look_direction.y_rot() + p.y_rot as f32;
@@ -198,8 +268,8 @@ async fn process_packet(bot: &mut Bot, packet: ClientboundGamePacket) -> io::Res
     ClientboundGamePacket::PlayerInfoUpdate(p) => {
       let profile = &mut bot.components.profile;
 
-      for entry in p.entries {
-        if entry.profile.name == bot.username {
+      for entry in &p.entries {
+        if entry.profile.name == bot.account.username {
           profile.ping = entry.latency;
         } else {
           if let Some(shared_storage) = &bot.shared_storage {

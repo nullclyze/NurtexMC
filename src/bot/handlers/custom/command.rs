@@ -11,8 +11,8 @@ use azalea_protocol::packets::game::{
   ServerboundPlayerAction, ServerboundSwing, ServerboundUseItem,
 };
 
-use crate::core::bot::Bot;
-use crate::core::common::BotCommand;
+use crate::bot::Bot;
+use crate::bot::terminal::BotCommand;
 
 /// Тип обработчика команд
 pub type CommandProcessorFn =
