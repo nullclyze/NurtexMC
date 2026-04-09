@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::bot::Bot;
@@ -42,17 +41,42 @@ pub trait BotPackage: Clone + Send + 'static {
   fn describe<P: BotPackage>(bot: &Bot<P>) -> Self;
 }
 
-/// Передатчик пакетов с данными бота
+/// Передатчик пакетов с данными бота.
+/// 
+/// Пример использования:
+/// ```rust, ignore
+/// // Создаём бота и задаём ему тип со стандартным пакетом данных
+/// let account = BotAccount::new("NurtexBot");
+/// let bot: Bot<StandardPackage> = Bot::create(account)
+///   .set_transmitter_interval(500); // Можно указать свой интервал (в мс)
+/// 
+/// // Получаем передатчик бота для отдельной задачи
+/// let transmitter = bot.get_transmitter();
+/// 
+/// // Спавним tokio задачу до запуска бота
+/// tokio::spawn(async move {
+///   // Подписываемся на передатчик пакетов
+///   let mut receiver = transmitter.subscribe();
+///   
+///   // Создаём цикл обработки пакетов
+///   while let Ok(package) = receiver.recv().await {
+///     println!("Здоровье бота: {:?}", package.health);
+///   }
+/// });
+/// 
+/// // Подключаем бота к серверу
+/// bot.connect_to("localhost", 25565).await?;
+/// ```
 #[derive(Clone)]
 pub struct BotTransmitter<B: BotPackage> {
-  sender: Arc<broadcast::Sender<B>>,
+  sender: broadcast::Sender<B>,
 }
 
 impl<B: BotPackage> BotTransmitter<B> {
   /// Метод создания нового передатчика
   pub fn new(capacity: usize) -> Self {
     let (sender, _) = broadcast::channel(capacity);
-    Self { sender: Arc::new(sender) }
+    Self { sender: sender }
   }
 
   /// Метод подписки к передатчику пакетов

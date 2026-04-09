@@ -83,7 +83,7 @@ pub struct Bot<P: BotPackage = NullPackage> {
   /// Физика бота
   pub physics: Physics,
 
-  transmitter: BotTransmitter<P>,
+  transmitter: Arc<BotTransmitter<P>>,
   transmitter_interval: u64,
   connection_timeout: u64,
   proxy: Option<Proxy>,
@@ -135,7 +135,7 @@ impl<P: BotPackage> Bot<P> {
       plugins: BotPlugins::default(),
       information: BotInformation::default(),
       physics: Physics::default(),
-      transmitter: BotTransmitter::new(10),
+      transmitter: Arc::new(BotTransmitter::new(10)),
       transmitter_interval: 100,
       connection_timeout: 14000,
       proxy: None,
@@ -522,7 +522,7 @@ impl<P: BotPackage> Bot<P> {
   }
 
   /// Метод получения передатчика пакетов
-  pub fn get_transmitter(&self) -> BotTransmitter<P> {
+  pub fn get_transmitter(&self) -> Arc<BotTransmitter<P>> {
     self.transmitter.clone()
   }
 }
