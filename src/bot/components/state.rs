@@ -1,3 +1,4 @@
+/// Структура данных состояния
 #[derive(Debug)]
 pub struct State {
   pub health: f32,

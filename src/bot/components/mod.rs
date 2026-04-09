@@ -1,7 +1,9 @@
-mod physics;
-mod profile;
-mod state;
+pub mod position;
+pub mod profile;
+pub mod rotation;
+pub mod state;
+pub mod velocity;
 
-pub use physics::*;
-pub use profile::*;
-pub use state::*;
+mod components;
+
+pub use components::*;

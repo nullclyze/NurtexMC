@@ -2,44 +2,24 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::bot::events::{BotEvent, ChatPayload, ChunkPayload, PacketPayload, RotationPayload};
+use crate::bot::events::{DisconnectPayload, PositionPayload};
 use crate::bot::terminal::BotTerminal;
-use crate::bot::events::DisconnectPayload;
-use crate::bot::events::{BotEvent, ChatPayload, PacketPayload};
 
-pub type AsyncEventInvoker =
-  Box<dyn Fn(Arc<BotTerminal>, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+pub type AsyncEventInvoker = Box<dyn Fn(Arc<BotTerminal>, BotEvent) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// Инициатор событий и их обработчиков
 pub struct EventInvoker {
-  login_finished_handler:
-    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
-  config_finished_handler:
-    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
-  spawn_handler:
-    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
-  death_handler:
-    Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
-  disconnect_handler: Option<
-    Arc<
-      dyn Fn(Arc<BotTerminal>, DisconnectPayload) -> Pin<Box<dyn Future<Output = ()> + Send>>
-        + Send
-        + Sync,
-    >,
-  >,
-  chat_handler: Option<
-    Arc<
-      dyn Fn(Arc<BotTerminal>, ChatPayload) -> Pin<Box<dyn Future<Output = ()> + Send>>
-        + Send
-        + Sync,
-    >,
-  >,
-  packet_handler: Option<
-    Arc<
-      dyn Fn(Arc<BotTerminal>, PacketPayload) -> Pin<Box<dyn Future<Output = ()> + Send>>
-        + Send
-        + Sync,
-    >,
-  >,
+  login_finished_handler: Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  config_finished_handler: Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  spawn_handler: Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  death_handler: Option<Arc<dyn Fn(Arc<BotTerminal>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  disconnect_handler: Option<Arc<dyn Fn(Arc<BotTerminal>, DisconnectPayload) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  chat_handler: Option<Arc<dyn Fn(Arc<BotTerminal>, ChatPayload) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  update_position: Option<Arc<dyn Fn(Arc<BotTerminal>, PositionPayload) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  update_rotation: Option<Arc<dyn Fn(Arc<BotTerminal>, RotationPayload) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  packet_handler: Option<Arc<dyn Fn(Arc<BotTerminal>, PacketPayload) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
+  chunk_loaded_handler: Option<Arc<dyn Fn(Arc<BotTerminal>, ChunkPayload) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>>,
 }
 
 impl EventInvoker {
@@ -51,7 +31,10 @@ impl EventInvoker {
       death_handler: None,
       disconnect_handler: None,
       chat_handler: None,
+      update_position: None,
+      update_rotation: None,
       packet_handler: None,
+      chunk_loaded_handler: None,
     }
   }
 
@@ -92,9 +75,7 @@ impl EventInvoker {
     F: Fn(Arc<BotTerminal>, DisconnectPayload) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
-    self.disconnect_handler = Some(Arc::new(move |terminal, payload| {
-      Box::pin(handler(terminal, payload))
-    }));
+    self.disconnect_handler = Some(Arc::new(move |terminal, payload| Box::pin(handler(terminal, payload))));
   }
 
   pub fn on_chat<F, Fut>(&mut self, handler: F)
@@ -102,9 +83,23 @@ impl EventInvoker {
     F: Fn(Arc<BotTerminal>, ChatPayload) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
-    self.chat_handler = Some(Arc::new(move |terminal, payload| {
-      Box::pin(handler(terminal, payload))
-    }));
+    self.chat_handler = Some(Arc::new(move |terminal, payload| Box::pin(handler(terminal, payload))));
+  }
+
+  pub fn on_update_position<F, Fut>(&mut self, handler: F)
+  where
+    F: Fn(Arc<BotTerminal>, PositionPayload) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+  {
+    self.update_position = Some(Arc::new(move |terminal, payload| Box::pin(handler(terminal, payload))));
+  }
+
+  pub fn on_update_rotation<F, Fut>(&mut self, handler: F)
+  where
+    F: Fn(Arc<BotTerminal>, RotationPayload) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+  {
+    self.update_rotation = Some(Arc::new(move |terminal, payload| Box::pin(handler(terminal, payload))));
   }
 
   pub fn on_packet<F, Fut>(&mut self, handler: F)
@@ -112,9 +107,15 @@ impl EventInvoker {
     F: Fn(Arc<BotTerminal>, PacketPayload) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
   {
-    self.packet_handler = Some(Arc::new(move |terminal, payload| {
-      Box::pin(handler(terminal, payload))
-    }));
+    self.packet_handler = Some(Arc::new(move |terminal, payload| Box::pin(handler(terminal, payload))));
+  }
+
+  pub fn on_chunk_loaded<F, Fut>(&mut self, handler: F)
+  where
+    F: Fn(Arc<BotTerminal>, ChunkPayload) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+  {
+    self.chunk_loaded_handler = Some(Arc::new(move |terminal, payload| Box::pin(handler(terminal, payload))));
   }
 
   /// Метод триггеринга определённого события
@@ -150,8 +151,23 @@ impl EventInvoker {
           handler(terminal, payload).await;
         }
       }
+      BotEvent::UpdatePosition(payload) => {
+        if let Some(handler) = &self.update_position {
+          handler(terminal, payload).await;
+        }
+      }
+      BotEvent::UpdateRotation(payload) => {
+        if let Some(handler) = &self.update_rotation {
+          handler(terminal, payload).await;
+        }
+      }
       BotEvent::Packet(payload) => {
         if let Some(handler) = &self.packet_handler {
+          handler(terminal, payload).await;
+        }
+      }
+      BotEvent::ChunkLoaded(payload) => {
+        if let Some(handler) = &self.chunk_loaded_handler {
           handler(terminal, payload).await;
         }
       }

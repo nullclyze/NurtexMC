@@ -1,22 +1,15 @@
 use azalea_protocol::common::client_information::{ClientInformation, ParticleStatus};
 
-use crate::bot::components::{Physics, Profile, State};
-
-#[derive(Debug, PartialEq)]
+/// Статус подключения бота
+#[derive(Debug, Clone, PartialEq)]
 pub enum BotStatus {
   Offline,
   Connecting,
   Online,
 }
 
-#[derive(Debug)]
-pub struct BotComponents {
-  pub physics: Physics,
-  pub state: State,
-  pub profile: Profile,
-}
-
-#[derive(Debug)]
+/// Информация бота
+#[derive(Debug, Clone)]
 pub struct BotInformation {
   /// Бренд бота, по умолчанию "vanilla"
   pub brand: String,
@@ -37,7 +30,8 @@ impl Default for BotInformation {
   }
 }
 
-#[derive(Debug)]
+/// Плагины бота и их опции
+#[derive(Debug, Clone)]
 pub struct BotPlugins {
   pub auto_reconnect: AutoReconnectPlugin,
   pub auto_respawn: AutoRespawnPlugin,
@@ -57,18 +51,18 @@ impl Default for BotPlugins {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AutoReconnectPlugin {
   pub enabled: bool,
   pub reconnect_delay: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AutoRespawnPlugin {
   pub enabled: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PhysicsPlugin {
   pub enabled: bool,
 }

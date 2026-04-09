@@ -3,8 +3,8 @@ mod tests {
   use std::io;
 
   use nurtex::bot::account::BotAccount;
-  use nurtex::bot::options::{AutoReconnectPlugin, BotPlugins};
   use nurtex::bot::events::EventInvoker;
+  use nurtex::bot::options::{AutoReconnectPlugin, BotPlugins};
   use nurtex::swarm::SwarmObject;
   use nurtex::utils::time::sleep;
   use nurtex::{create_shared_swarm, destroy_shared_swarm, launch_shared_swarm};
@@ -21,23 +21,18 @@ mod tests {
       });
 
       event_invoker.on_chat(async |terminal, payload| {
-        println!(
-          "Бот {} получил сообщение: {}",
-          terminal.account.username, payload.message
-        );
+        println!("Бот {} получил сообщение: {}", terminal.account.username, payload.message);
       });
 
       let account = BotAccount::new(format!("bot_{}", i));
 
-      let object = SwarmObject::new(account)
-        .set_event_invoker(event_invoker)
-        .set_plugins(BotPlugins {
-          auto_reconnect: AutoReconnectPlugin {
-            enabled: true,
-            reconnect_delay: 1000,
-          },
-          ..Default::default()
-        });
+      let object = SwarmObject::new(account).set_event_invoker(event_invoker).set_plugins(BotPlugins {
+        auto_reconnect: AutoReconnectPlugin {
+          enabled: true,
+          reconnect_delay: 1000,
+        },
+        ..Default::default()
+      });
 
       objects.push(object);
     }
@@ -48,9 +43,13 @@ mod tests {
 
     sleep(8000).await;
 
-    swarm.read().await.for_each_parallel(|terminal| async move {
-      terminal.chat("Test").await;
-    }).await;
+    swarm
+      .read()
+      .await
+      .for_each_parallel(|terminal| async move {
+        terminal.chat("Test").await;
+      })
+      .await;
 
     {
       let guard = swarm.read().await;

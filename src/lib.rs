@@ -38,12 +38,7 @@ pub fn create_shared_swarm(objects: Vec<SwarmObject>) -> SharedSwarm {
 }
 
 /// Функция запуска shared-роя, неблокирующая поток на время запуска
-pub fn launch_shared_swarm(
-  swarm: SharedSwarm,
-  server_host: String,
-  server_port: u16,
-  join_delay: u64,
-) {
+pub fn launch_shared_swarm(swarm: SharedSwarm, server_host: String, server_port: u16, join_delay: u64) {
   tokio::spawn(async move {
     let bots = std::mem::take(&mut swarm.write().await.bots);
 
@@ -78,10 +73,7 @@ pub async fn destroy_shared_swarm(swarm: SharedSwarm) -> std::io::Result<()> {
         guard.force_destroy();
         Ok(())
       }
-      Err(_) => Err(std::io::Error::new(
-        std::io::ErrorKind::TimedOut,
-        "Failed to acquire write lock for swarm destruction",
-      )),
+      Err(_) => Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "Failed to acquire write lock for swarm destruction")),
     },
   }
 }

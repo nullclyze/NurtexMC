@@ -9,50 +9,39 @@ use crate::bot::account::BotAccount;
 #[derive(Clone, Debug)]
 pub enum BotCommand {
   Chat(String),
-  SetDirection {
-    yaw: f32,
-    pitch: f32,
-  },
-  SetPosition {
-    x: f64,
-    y: f64,
-    z: f64,
-  },
+  SetDirection { yaw: f32, pitch: f32 },
+  SetPosition { x: f64, y: f64, z: f64 },
   SwingArm(InteractionHand),
   StartUseItem(InteractionHand),
   ReleaseUseItem,
   SendPacket(ServerboundGamePacket),
   Disconnect,
-  Reconnect {
-    server_host: String,
-    server_port: u16,
-    interval: u64,
-  },
+  Reconnect { server_host: String, server_port: u16, interval: u64 },
 }
 
 /// Терминал бота, используется для отправки команд.
-/// 
+///
 /// Пример использования:
 /// ```rust, ignore
 /// // Создаём бота
 /// let account = BotAccount::new("NurtexBot");
 /// let bot = Bot::create(account);
-/// 
+///
 /// // Клонируем терминал до запуска бота
 /// let terminal = bot.terminal.clone();
-/// 
+///
 /// // Спавним отдельную асинхронную задачу перед запуском бота
 /// tokio::spawn(async move {
 ///   // Ждём пока бот подключится
 ///   tokio::time::sleep(Duration::from_millis(5000)).await;
-/// 
+///
 ///   // Получаем юзернейм бота через терминал
 ///   let username = terminal.account.username;
-/// 
+///
 ///   // Отправляем сообщение в чат при помощи терминала
 ///   terminal.chat(format!("Привет, мир! Мой юзернейм: {}", username)).await;
 /// });
-/// 
+///
 /// // Подключаем бота к серверу
 /// bot.connect_to("server.com", 25565).await?;
 /// ```

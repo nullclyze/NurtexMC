@@ -1,3 +1,4 @@
+/// Структура данных профиля
 #[derive(Debug)]
 pub struct Profile {
   pub entity_id: Option<i32>,

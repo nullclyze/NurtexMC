@@ -19,33 +19,43 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 use crate::bot::account::BotAccount;
-use crate::bot::options::{BotComponents, BotInformation, BotPlugins, BotStatus};
-use crate::bot::components::{Physics, Profile, State};
-use crate::bot::terminal::{BotCommand, BotTerminal};
-use crate::bot::world::{Storage, StorageLock};
-use crate::bot::events::DisconnectPayload;
-use crate::bot::events::{BotEvent, EventInvoker, PacketPayload};
-use crate::bot::handlers::base::{process_login, process_configuration};
+use crate::bot::components::BotComponents;
+use crate::bot::components::position::Position;
+use crate::bot::components::rotation::Rotation;
+use crate::bot::events::{BotEvent, EventInvoker, PacketPayload, RotationPayload};
+use crate::bot::events::{DisconnectPayload, PositionPayload};
+use crate::bot::handlers::base::{process_configuration, process_login};
 use crate::bot::handlers::custom::command::{CommandProcessorFn, default_command_processor};
 use crate::bot::handlers::custom::packet::{PacketProcessorFn, default_packet_processor};
+use crate::bot::options::{BotInformation, BotPlugins, BotStatus};
+use crate::bot::physics::Physics;
+use crate::bot::terminal::{BotCommand, BotTerminal};
+use crate::bot::transmitter::{BotPackage, BotTransmitter, NullPackage};
+use crate::bot::world::{Storage, StorageLock};
 use crate::utils::time::{sleep, timestamp};
 
 /// Основная структура бота, состояния, компоненты, методы подключения -
 /// всё хранится именно здесь. Данный объект содержит в себе всю
 /// информацию о мире (`Storage`), но при запуске роя бот будет отправлять
-/// все данные в `SharedStorage` (если в `Swarm` значение у 
+/// все данные в `SharedStorage` (если в `Swarm` значение у
 /// флага `use_shared_storage` является `true` для этого бота).
-/// 
+///
+/// Generic параметр `B` определяет тип bundle'а данных, который будет
+/// передаваться через `BotTransmitter`. По умолчанию используется `StandardBundle`.
+///
 /// Пример создания и подключения бота к серверу:
 /// ```rust, ignore
-/// // Создаём бота
+/// // Создаём бота с стандартным bundle'ом
 /// let account = BotAccount::new("NurtexBot");
-/// let bot = Bot::create(account);
-/// 
+/// let mut bot = Bot::create(account);
+///
+/// // Или с пользовательским bundle'ом
+/// let mut bot = Bot::<MyCustomBundle>::create(account);
+///
 /// // Подключаем бота к серверу
 /// bot.connect_to("server.com", 25565).await?;
 /// ```
-pub struct Bot {
+pub struct Bot<P: BotPackage = NullPackage> {
   /// Статус подключения бота
   pub status: BotStatus,
 
@@ -70,19 +80,44 @@ pub struct Bot {
   /// Shared-хранилище бота (опциональное)
   pub shared_storage: Option<StorageLock>,
 
+  /// Физика бота
+  pub physics: Physics,
+
+  transmitter: BotTransmitter<P>,
+  transmitter_interval: u64,
   connection_timeout: u64,
   proxy: Option<Proxy>,
   information: BotInformation,
   command_receiver: mpsc::Receiver<BotCommand>,
-  packet_processor: PacketProcessorFn,
-  command_processor: CommandProcessorFn,
+  packet_processor: PacketProcessorFn<P>,
+  command_processor: CommandProcessorFn<P>,
   event_invoker: Arc<EventInvoker>,
 }
 
-impl Bot {
-  /// Метод создания нового бота
+impl<P: BotPackage> Bot<P> {
+  /// Метод создания нового бота.
+  ///
+  /// Пример создания и базовой настройки:
+  /// ```rust, ignore
+  /// // Создаём аккаунт
+  /// let account = BotAccount::new("NurtexBot");
+  ///  
+  /// // Создаём и настраиваем бота
+  /// let mut bot = Bot::create(account)
+  ///   .set_connection_timeout(30000)
+  ///   .set_information(BotInformation {
+  ///     client: ClientInformation {
+  ///       main_hand: HumanoidArm::Left,
+  ///       ..Default::default()
+  ///     },
+  ///     ..Default::default(),
+  ///   });
+  ///
+  /// // Подключаем бота к серверу
+  /// bot.connect_to("server.com", 25565).await?;
+  /// ```
   pub fn create(account: BotAccount) -> Self {
-    let (sender, receiver) = mpsc::channel(50);
+    let (sender, receiver) = mpsc::channel(25);
 
     let bot_account = Arc::new(account);
 
@@ -96,13 +131,12 @@ impl Bot {
       connection: None,
       local_storage: Arc::new(RwLock::new(Storage::new())),
       shared_storage: None,
-      components: BotComponents {
-        physics: Physics::default(),
-        state: State::default(),
-        profile: Profile::default(),
-      },
+      components: BotComponents::default(),
       plugins: BotPlugins::default(),
       information: BotInformation::default(),
+      physics: Physics::default(),
+      transmitter: BotTransmitter::new(10),
+      transmitter_interval: 100,
       connection_timeout: 14000,
       proxy: None,
       command_receiver: receiver,
@@ -115,9 +149,8 @@ impl Bot {
   /// Метод запуска бота, который возвращает JoinHandle и не блокирует поток.
   pub fn spawn(mut self, server_host: &str, server_port: u16) -> JoinHandle<io::Result<()>> {
     let host = server_host.to_string();
-    let port = server_port;
 
-    tokio::spawn(async move { self.connect_to(&host, port).await })
+    tokio::spawn(async move { self.connect_to(&host, server_port).await })
   }
 
   /// Метод установки таймаута подключения
@@ -144,6 +177,12 @@ impl Bot {
     self
   }
 
+  /// Метод установки интервала передатчика
+  pub fn set_transmitter_interval(mut self, interval: u64) -> Self {
+    self.transmitter_interval = interval;
+    self
+  }
+
   /// Метод установки shared-хранилища
   pub fn set_shared_storage(mut self, storage: StorageLock) -> Self {
     self.shared_storage = Some(storage);
@@ -151,13 +190,13 @@ impl Bot {
   }
 
   /// Метод установки обработчика пакетов
-  pub fn set_packet_processor(mut self, processor: PacketProcessorFn) -> Self {
+  pub fn set_packet_processor(mut self, processor: PacketProcessorFn<P>) -> Self {
     self.packet_processor = processor;
     self
   }
 
   /// Метод установки обработчика команд
-  pub fn set_command_processor(mut self, processor: CommandProcessorFn) -> Self {
+  pub fn set_command_processor(mut self, processor: CommandProcessorFn<P>) -> Self {
     self.command_processor = processor;
     self
   }
@@ -184,10 +223,7 @@ impl Bot {
   }
 
   /// Метод создания подключения
-  async fn create_connection(
-    &self,
-    address: SocketAddr,
-  ) -> io::Result<Connection<ClientboundHandshakePacket, ServerboundHandshakePacket>> {
+  async fn create_connection(&self, address: SocketAddr) -> io::Result<Connection<ClientboundHandshakePacket, ServerboundHandshakePacket>> {
     let result = if let Some(proxy) = &self.proxy {
       Connection::new_with_proxy(&address, proxy.clone()).await
     } else {
@@ -207,17 +243,10 @@ impl Bot {
       Ok(mut i) => i.next(),
       Err(err) => return Err(err),
     }) else {
-      return Err(io::Error::new(
-        io::ErrorKind::AddrNotAvailable,
-        "Failed to retrieve socket address",
-      ));
+      return Err(io::Error::new(io::ErrorKind::AddrNotAvailable, "Failed to retrieve socket address"));
     };
 
-    let connection_result = timeout(
-      Duration::from_millis(self.connection_timeout),
-      self.perform_connection(address, server_host, server_port),
-    )
-    .await;
+    let connection_result = timeout(Duration::from_millis(self.connection_timeout), self.perform_connection(address, server_host, server_port)).await;
 
     match connection_result {
       Ok(Ok(conn)) => {
@@ -229,21 +258,13 @@ impl Bot {
       Ok(Err(err)) => Err(err),
       Err(_) => Err(io::Error::new(
         io::ErrorKind::TimedOut,
-        format!(
-          "Failed to get a response from the server within the timeout period ({} ms)",
-          self.connection_timeout
-        ),
+        format!("Failed to get a response from the server within the timeout period ({} ms)", self.connection_timeout),
       )),
     }
   }
 
   /// Метод полного процесса подключения бота к серверу
-  async fn perform_connection(
-    &mut self,
-    address: SocketAddr,
-    server_host: &str,
-    server_port: u16,
-  ) -> io::Result<Connection<ClientboundGamePacket, ServerboundGamePacket>> {
+  async fn perform_connection(&mut self, address: SocketAddr, server_host: &str, server_port: u16) -> io::Result<Connection<ClientboundGamePacket, ServerboundGamePacket>> {
     let mut conn = self.create_connection(address).await?;
 
     self.status = BotStatus::Connecting;
@@ -288,11 +309,7 @@ impl Bot {
           break;
         }
         Err(err) => match err.kind() {
-          ErrorKind::ConnectionRefused
-          | ErrorKind::ConnectionReset
-          | ErrorKind::ConnectionAborted
-          | ErrorKind::NotConnected
-          | ErrorKind::TimedOut => {
+          ErrorKind::ConnectionRefused | ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted | ErrorKind::NotConnected | ErrorKind::TimedOut => {
             self.emit_event(BotEvent::Disconnect(DisconnectPayload {
               reason: err.to_string(),
               timestamp: timestamp(),
@@ -321,9 +338,10 @@ impl Bot {
     let mut tick_interval = tokio::time::interval(tokio::time::Duration::from_millis(50));
     tick_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    let mut transmitter_interval = tokio::time::interval(tokio::time::Duration::from_millis(self.transmitter_interval));
+    transmitter_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
-      // Проверка текущего статуса подключения.
-      // Если статус offline возвращаем Ok(()), чтобы избежать дублированных циклов событий
       if self.status != BotStatus::Online {
         return Ok(());
       }
@@ -369,30 +387,29 @@ impl Bot {
             return Err(e);
           }
         }
+
+        // Обработка тика передатчика
+        _ = transmitter_interval.tick() => {
+          self.emit_package();
+        }
       }
     }
   }
 
   /// Метод проверки некого Entity ID на сходство с Entity ID текущего бота
   pub fn is_this_my_entity_id(&self, id: i32) -> bool {
-    self
-      .components
-      .profile
-      .entity_id
-      .map_or(false, |entity_id| entity_id == id)
+    self.components.profile.entity_id.map_or(false, |entity_id| entity_id == id)
   }
 
-  /// Метод выполнения определённых операций в каждый физический тик
+  /// Метод выполнения определённых операций в физический тик
   async fn tick(&mut self) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
-      return Err(Error::new(
-        ErrorKind::NotConnected,
-        "Connection could not be obtained",
-      ));
+      return Err(Error::new(ErrorKind::NotConnected, "Connection could not be obtained"));
     };
 
     if self.plugins.physics.enabled {
-      self.components.physics.update(conn).await?;
+      let storage = self.local_storage.read().await;
+      self.components.tick(conn, &mut self.physics, &storage).await?;
     }
 
     Ok(())
@@ -408,10 +425,7 @@ impl Bot {
   /// Метод закрытия TcpStream (отключение от сервера)
   pub async fn disconnect(&mut self) -> io::Result<()> {
     let Some(conn) = self.connection.take() else {
-      return Err(Error::new(
-        ErrorKind::NotConnected,
-        "Connection could not be obtained",
-      ));
+      return Err(Error::new(ErrorKind::NotConnected, "Connection could not be obtained"));
     };
 
     let mut stream = match conn.unwrap() {
@@ -434,12 +448,7 @@ impl Bot {
   }
 
   /// Метод переподключения бота к серверу
-  pub async fn reconnect(
-    &mut self,
-    server_host: &str,
-    server_port: u16,
-    interval: u64,
-  ) -> io::Result<()> {
+  pub async fn reconnect(&mut self, server_host: &str, server_port: u16, interval: u64) -> io::Result<()> {
     self.disconnect().await?;
     sleep(interval).await;
     self.connect_to(server_host, server_port).await?;
@@ -449,10 +458,7 @@ impl Bot {
   /// Метод отправки сообщения в чат
   pub async fn chat(&mut self, message: impl Into<String>) -> io::Result<()> {
     let Some(conn) = &mut self.connection else {
-      return Err(Error::new(
-        ErrorKind::NotConnected,
-        "Connection could not be obtained",
-      ));
+      return Err(Error::new(ErrorKind::NotConnected, "Connection could not be obtained"));
     };
 
     conn
@@ -466,5 +472,57 @@ impl Bot {
       .await?;
 
     Ok(())
+  }
+
+  /// Метод обновления позиции
+  pub fn update_position(&mut self, position: Position) {
+    let pos = &mut self.components.position;
+    let old_pos = pos.clone();
+
+    if old_pos == position {
+      return;
+    }
+
+    *pos = position.clone();
+
+    self.emit_event(BotEvent::UpdatePosition(PositionPayload {
+      position: position,
+      old_position: old_pos,
+      timestamp: timestamp(),
+    }));
+  }
+
+  /// Метод обновления ротации
+  pub fn update_rotation(&mut self, rotation: Rotation) {
+    let rot = &mut self.components.rotation;
+    let old_rot = rot.clone();
+
+    if old_rot == rotation {
+      return;
+    }
+
+    *rot = rotation.clone();
+
+    self.emit_event(BotEvent::UpdateRotation(RotationPayload {
+      rotation: rotation,
+      old_rotation: old_rot,
+      timestamp: timestamp(),
+    }));
+  }
+
+  /// Метод отправки пакета данных
+  fn emit_package(&self) {
+    if self.transmitter.receiver_count() < 1 {
+      return;
+    }
+
+    let package = P::describe(self);
+
+    self.transmitter.emit(package);
+  }
+
+  /// Метод получения передатчика пакетов
+  pub fn get_transmitter(&self) -> BotTransmitter<P> {
+    self.transmitter.clone()
   }
 }

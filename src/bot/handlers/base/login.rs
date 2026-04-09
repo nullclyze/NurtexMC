@@ -4,9 +4,7 @@ use azalea_protocol::connect::Connection;
 use azalea_protocol::packets::login::*;
 
 /// Функция обработки всего цикла пакетов в состоянии Login
-pub async fn process_login(
-  conn: &mut Connection<ClientboundLoginPacket, ServerboundLoginPacket>,
-) -> io::Result<()> {
+pub async fn process_login(conn: &mut Connection<ClientboundLoginPacket, ServerboundLoginPacket>) -> io::Result<()> {
   loop {
     let packet = match conn.read().await {
       Ok(p) => p,
@@ -33,18 +31,10 @@ pub async fn process_login(
         return Ok(());
       }
       ClientboundLoginPacket::LoginDisconnect(p) => {
-        return Err(Error::new(
-          ErrorKind::ConnectionAborted,
-          format!("Disconnected (Login): {}", p.reason.to_string()),
-        ));
+        return Err(Error::new(ErrorKind::ConnectionAborted, format!("Disconnected (Login): {}", p.reason.to_string())));
       }
       ClientboundLoginPacket::CookieRequest(p) => {
-        conn
-          .write(ServerboundCookieResponse {
-            key: p.key,
-            payload: None,
-          })
-          .await?;
+        conn.write(ServerboundCookieResponse { key: p.key, payload: None }).await?;
       }
       _ => {}
     }

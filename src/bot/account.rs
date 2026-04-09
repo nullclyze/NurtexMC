@@ -7,7 +7,7 @@ pub struct BotAccount {
   pub username: String,
 
   /// UUID аккаунта, по умолчанию нулевой
-  pub uuid: Uuid
+  pub uuid: Uuid,
 }
 
 impl BotAccount {
@@ -15,7 +15,7 @@ impl BotAccount {
   pub fn new(username: impl Into<String>) -> Self {
     Self {
       username: username.into(),
-      uuid: Uuid::nil()
+      uuid: Uuid::nil(),
     }
   }
 

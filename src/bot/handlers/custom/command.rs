@@ -6,36 +6,24 @@ use azalea_core::position::{BlockPos, Vec3};
 use azalea_entity::LookDirection;
 use azalea_protocol::common::movements::MoveFlags;
 use azalea_protocol::packets::game::s_player_action::Action;
-use azalea_protocol::packets::game::{
-  ServerboundGamePacket, ServerboundMovePlayerPos, ServerboundMovePlayerRot,
-  ServerboundPlayerAction, ServerboundSwing, ServerboundUseItem,
-};
+use azalea_protocol::packets::game::{ServerboundGamePacket, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundSwing, ServerboundUseItem};
 
 use crate::bot::Bot;
 use crate::bot::terminal::BotCommand;
+use crate::bot::transmitter::BotPackage;
 
 /// Тип обработчика команд
-pub type CommandProcessorFn =
-  for<'a> fn(
-    &'a mut Bot,
-    BotCommand,
-  ) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
+pub type CommandProcessorFn<P> = for<'a> fn(&'a mut Bot<P>, BotCommand) -> Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + 'a>>;
 
 /// Дефолтный обработчик команд
-pub fn default_command_processor(
-  bot: &mut Bot,
-  command: BotCommand,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + '_>> {
+pub fn default_command_processor<P: BotPackage>(bot: &mut Bot<P>, command: BotCommand) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<bool>> + Send + '_>> {
   Box::pin(process_command(bot, command))
 }
 
 /// Функция обработки внешней команды
-async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool> {
+async fn process_command<P: BotPackage>(bot: &mut Bot<P>, command: BotCommand) -> io::Result<bool> {
   let Some(conn) = &mut bot.connection else {
-    return Err(Error::new(
-      ErrorKind::NotConnected,
-      "Connection could not be obtained",
-    ));
+    return Err(Error::new(ErrorKind::NotConnected, "Connection could not be obtained"));
   };
 
   match command {
@@ -44,57 +32,49 @@ async fn process_command(bot: &mut Bot, command: BotCommand) -> io::Result<bool>
     }
     BotCommand::SetDirection { yaw, pitch } => {
       conn
-        .write(ServerboundGamePacket::MovePlayerRot(
-          ServerboundMovePlayerRot {
-            look_direction: LookDirection::new(yaw, pitch),
-            flags: MoveFlags {
-              on_ground: bot.components.physics.on_ground,
-              horizontal_collision: false,
-            },
+        .write(ServerboundGamePacket::MovePlayerRot(ServerboundMovePlayerRot {
+          look_direction: LookDirection::new(yaw, pitch),
+          flags: MoveFlags {
+            on_ground: bot.physics.on_ground,
+            horizontal_collision: false,
           },
-        ))
+        }))
         .await?;
     }
     BotCommand::SetPosition { x, y, z } => {
       conn
-        .write(ServerboundGamePacket::MovePlayerPos(
-          ServerboundMovePlayerPos {
-            pos: Vec3::new(x, y, z),
-            flags: MoveFlags {
-              on_ground: bot.components.physics.on_ground,
-              horizontal_collision: false,
-            },
+        .write(ServerboundGamePacket::MovePlayerPos(ServerboundMovePlayerPos {
+          pos: Vec3::new(x, y, z),
+          flags: MoveFlags {
+            on_ground: bot.physics.on_ground,
+            horizontal_collision: false,
           },
-        ))
+        }))
         .await?;
     }
     BotCommand::SwingArm(hand) => {
-      conn
-        .write(ServerboundGamePacket::Swing(ServerboundSwing { hand }))
-        .await?;
+      conn.write(ServerboundGamePacket::Swing(ServerboundSwing { hand })).await?;
     }
     BotCommand::StartUseItem(hand) => {
-      let look_direction = bot.components.physics.look_direction;
+      let rotation = bot.components.rotation;
 
       conn
         .write(ServerboundGamePacket::UseItem(ServerboundUseItem {
           hand: hand,
           seq: 0,
-          y_rot: look_direction.y_rot(),
-          x_rot: look_direction.x_rot(),
+          y_rot: rotation.yaw,
+          x_rot: rotation.pitch,
         }))
         .await?;
     }
     BotCommand::ReleaseUseItem => {
       conn
-        .write(ServerboundGamePacket::PlayerAction(
-          ServerboundPlayerAction {
-            action: Action::ReleaseUseItem,
-            pos: BlockPos::new(0, 0, 0),
-            direction: Direction::Down,
-            seq: 0,
-          },
-        ))
+        .write(ServerboundGamePacket::PlayerAction(ServerboundPlayerAction {
+          action: Action::ReleaseUseItem,
+          pos: BlockPos::new(0, 0, 0),
+          direction: Direction::Down,
+          seq: 0,
+        }))
         .await?;
     }
     BotCommand::SendPacket(packet) => {
