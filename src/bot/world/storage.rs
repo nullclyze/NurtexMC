@@ -165,6 +165,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
+  // Метод создания нового чанка
   pub fn new(pos: ChunkPos, raw_data: Vec<u8>) -> Self {
     Self {
       pos,
@@ -214,6 +215,7 @@ pub struct ChunkSection {
 }
 
 impl ChunkSection {
+  // Метод создания пустой секции чанка
   pub fn empty() -> Self {
     Self {
       palette: vec![0],

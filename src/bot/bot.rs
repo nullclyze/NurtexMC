@@ -14,7 +14,7 @@ use azalea_protocol::packets::login::s_hello::ServerboundHello;
 use azalea_protocol::packets::login::s_login_acknowledged::ServerboundLoginAcknowledged;
 use azalea_protocol::packets::{ClientIntention, PROTOCOL_VERSION};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
@@ -80,6 +80,7 @@ pub struct Bot<P: BotPackage = NullPackage> {
   connection_timeout: u64,
   proxy: Option<Proxy>,
   information: BotInformation,
+  event_sender: broadcast::Sender<BotEvent>,
   command_receiver: mpsc::Receiver<BotCommand>,
   packet_processor: PacketProcessorFn<P>,
   command_processor: CommandProcessorFn<P>,
@@ -109,15 +110,16 @@ impl<P: BotPackage> Bot<P> {
   /// bot.connect_to("server.com", 25565).await?;
   /// ```
   pub fn create(account: BotAccount) -> Self {
-    let (sender, receiver) = mpsc::channel(100); // Увеличено с 25 до 100 для лучшей производительности
+    let (event_tx, _) = broadcast::channel(30);
+    let (command_tx, command_rx) = mpsc::channel(30);
 
     let bot_account = Arc::new(account);
 
-    Self {
+    let bot = Self {
       status: BotStatus::Offline,
       terminal: Arc::new(BotTerminal {
         account: Arc::clone(&bot_account),
-        cmd: sender,
+        cmd: command_tx,
       }),
       account: bot_account,
       connection: None,
@@ -127,15 +129,20 @@ impl<P: BotPackage> Bot<P> {
       plugins: BotPlugins::default(),
       information: BotInformation::default(),
       physics: Physics::default(),
-      transmitter: Arc::new(BotTransmitter::new(50)), // Увеличено с 10 до 50 для swarm
+      transmitter: Arc::new(BotTransmitter::new(30)), 
       transmitter_interval: 500,
       connection_timeout: 14000,
       proxy: None,
-      command_receiver: receiver,
+      event_sender: event_tx,
+      command_receiver: command_rx,
       packet_processor: default_packet_processor,
       command_processor: default_command_processor,
       event_invoker: Arc::new(EventInvoker::new()),
-    }
+    };
+
+    bot.activate_invoker();
+
+    bot
   }
 
   /// Метод запуска бота, который возвращает JoinHandle и не блокирует поток.
@@ -199,19 +206,27 @@ impl<P: BotPackage> Bot<P> {
     self
   }
 
-  /// Метод отправки события
-  pub fn emit_event(&self, event: BotEvent) {
-    let invoker = Arc::clone(&self.event_invoker);
-    let terminal = Arc::clone(&self.terminal);
-
-    tokio::spawn(async move {
-      invoker.trigger(terminal, event).await;
-    });
-  }
-
   /// Метод получения ссылки на информацию бота
   pub fn get_information_ref(&self) -> &BotInformation {
     &self.information
+  }
+
+  /// Метод активации инициатора событий
+  fn activate_invoker(&self) {
+    let invoker = self.event_invoker.clone();
+    let terminal = self.terminal.clone();
+    let mut receiver = self.event_sender.subscribe();
+
+    tokio::spawn(async move {
+      while let Ok(event) = receiver.recv().await {
+        invoker.trigger(terminal.clone(), event).await;   
+      }
+    });
+  }
+
+  /// Метод отправки события всем получателям
+  pub fn emit_event(&self, event: BotEvent) {
+    let _ = self.event_sender.send(event);
   }
 
   /// Метод создания подключения
