@@ -40,17 +40,11 @@ use crate::utils::time::{sleep, timestamp};
 /// все данные в `SharedStorage` (если в `Swarm` значение у
 /// флага `use_shared_storage` является `true` для этого бота).
 ///
-/// Generic параметр `B` определяет тип bundle'а данных, который будет
-/// передаваться через `BotTransmitter`. По умолчанию используется `StandardBundle`.
-///
 /// Пример создания и подключения бота к серверу:
 /// ```rust, ignore
-/// // Создаём бота с стандартным bundle'ом
+/// // Создаём бота
 /// let account = BotAccount::new("NurtexBot");
-/// let mut bot = Bot::create(account);
-///
-/// // Или с пользовательским bundle'ом
-/// let mut bot = Bot::<MyCustomBundle>::create(account);
+/// let mut bot: Bot<NullPackage> = Bot::create(account);
 ///
 /// // Подключаем бота к серверу
 /// bot.connect_to("server.com", 25565).await?;
@@ -58,9 +52,6 @@ use crate::utils::time::{sleep, timestamp};
 pub struct Bot<P: BotPackage = NullPackage> {
   /// Статус подключения бота
   pub status: BotStatus,
-
-  /// Терминал бота, используется для управления
-  pub terminal: Arc<BotTerminal>,
 
   /// Аккаунт бота
   pub account: Arc<BotAccount>,
@@ -83,6 +74,7 @@ pub struct Bot<P: BotPackage = NullPackage> {
   /// Физика бота
   pub physics: Physics,
 
+  terminal: Arc<BotTerminal>,
   transmitter: Arc<BotTransmitter<P>>,
   transmitter_interval: u64,
   connection_timeout: u64,
@@ -97,13 +89,13 @@ pub struct Bot<P: BotPackage = NullPackage> {
 impl<P: BotPackage> Bot<P> {
   /// Метод создания нового бота.
   ///
-  /// Пример создания и базовой настройки:
+  /// Пример использования:
   /// ```rust, ignore
   /// // Создаём аккаунт
   /// let account = BotAccount::new("NurtexBot");
   ///  
   /// // Создаём и настраиваем бота
-  /// let mut bot = Bot::create(account)
+  /// let mut bot: Bot<NullPackage> = Bot::create(account)
   ///   .set_connection_timeout(30000)
   ///   .set_information(BotInformation {
   ///     client: ClientInformation {
@@ -136,7 +128,7 @@ impl<P: BotPackage> Bot<P> {
       information: BotInformation::default(),
       physics: Physics::default(),
       transmitter: Arc::new(BotTransmitter::new(10)),
-      transmitter_interval: 100,
+      transmitter_interval: 500,
       connection_timeout: 14000,
       proxy: None,
       command_receiver: receiver,
@@ -519,6 +511,11 @@ impl<P: BotPackage> Bot<P> {
     let package = P::describe(self);
 
     self.transmitter.emit(package);
+  }
+
+  /// Метод получения терминала
+  pub fn get_terminal(&self) -> Arc<BotTerminal> {
+    self.terminal.clone()
   }
 
   /// Метод получения передатчика пакетов

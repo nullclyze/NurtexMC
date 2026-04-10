@@ -19,7 +19,7 @@ async fn main() -> io::Result<()> {
   let swarm = create_shared_swarm(objects);
 
   // Запускаем рой ботов на сервер
-  launch_shared_swarm(swarm.clone(), "localhost".to_string(), 25565, 1000);
+  launch_shared_swarm(swarm.clone(), "localhost", 25565, 1000);
 
   // Ждём пока все боты зайдут
   sleep(7000).await;

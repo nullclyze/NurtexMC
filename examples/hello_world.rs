@@ -9,7 +9,7 @@ async fn main() -> io::Result<()> {
   let mut bot = create_bot("NurtexBot");
 
   // Клонируем терминал для отдельной задачи
-  let terminal = bot.terminal.clone();
+  let terminal = bot.get_terminal();
 
   tokio::spawn(async move {
     // Ждём пока бот подключится

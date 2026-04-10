@@ -2,11 +2,10 @@
 mod tests {
   use std::io;
 
-  use nurtex::bot::Bot;
-  use nurtex::bot::account::BotAccount;
   use nurtex::bot::components::position::Position;
   use nurtex::bot::events::EventInvoker;
   use nurtex::bot::transmitter::BotPackage;
+  use nurtex::create_bot_with_package;
 
   #[derive(Debug, Clone)]
   struct MyPackage {
@@ -23,8 +22,7 @@ mod tests {
 
   #[tokio::test]
   async fn launch_bot() -> io::Result<()> {
-    let account = BotAccount::new("NurtexBot");
-    let bot: Bot<MyPackage> = Bot::create(account).set_transmitter_interval(1000);
+    let bot = create_bot_with_package::<MyPackage>("NurtexBot");
 
     let username = bot.account.username.clone();
     let transmitter = bot.get_transmitter();
@@ -46,10 +44,6 @@ mod tests {
     event_invoker.on_chunk_loaded(|terminal, payload| async move {
       println!("Загружен новый чанк для {} ({}, {})", terminal.account.username, payload.x, payload.z);
     });
-
-    // event_invoker.on_update_position(|terminal, payload| async move {
-    //  println!("Позиция бота {} обновлена: {:?} -> {:?}", terminal.account.username, payload.old_position, payload.position);
-    // });
 
     event_invoker.on_update_rotation(|terminal, payload| async move {
       println!("Ротация бота {} обновлена: {:?} -> {:?}", terminal.account.username, payload.old_rotation, payload.rotation);

@@ -12,6 +12,7 @@ use crate::bot::account::BotAccount;
 use crate::bot::events::EventInvoker;
 use crate::bot::options::{BotInformation, BotPlugins};
 use crate::bot::terminal::{BotCommand, BotTerminal};
+use crate::bot::transmitter::{BotPackage, BotTransmitter, NullPackage};
 use crate::bot::world::{Storage, StorageLock};
 use crate::utils::time::sleep;
 
@@ -20,22 +21,25 @@ use crate::utils::time::sleep;
 /// Управлять ботами из роя напрямую **нельзя**,
 /// так как функция запуска забирает себе все
 /// объекты из `bots`. Для управления используются
-/// терминалы (поле `terminals`).
+/// терминалы (поле `terminals`). Для получения
+/// пакетов с данными ботов используются
+/// передатчики (поле `transmitters`).
 ///
-/// Пример параллельного управления ботами:
-/// ```rust, ignore
-/// // Проходимся по всем терминалам из роя
-/// swarm.read().await.for_each_parallel(|terminal| async move {
-///   // Отправляем сообщение в чат при помощи терминала
-///   terminal.chat("Привет, мир!").await;
-/// }).await;
-/// ```
-pub struct Swarm {
+/// Для одновременного управления всеми ботами
+/// можно использовать методы:
+/// - `for_each_async` (даёт доступ к терминалам)
+/// - `for_each_parallel` (даёт доступ к терминалам)
+/// - `for_each` (даёт доступ к терминалам)
+/// - `for_each_transmitters` (даёт доступ к передатчикам)
+pub struct Swarm<P: BotPackage = NullPackage> {
   /// Список всех ботов
-  pub bots: Vec<Bot>,
+  pub bots: Vec<Bot<P>>,
 
   /// Список всех терминалов, используется для управления определёнными ботами
   pub terminals: Vec<Arc<BotTerminal>>,
+
+  /// Список всех передатчиков, используется для получения данных ботов
+  pub transmitters: Vec<Arc<BotTransmitter<P>>>,
 
   /// Список всех задач (задач подключений)
   pub handles: Vec<JoinHandle<io::Result<()>>>,
@@ -45,14 +49,15 @@ pub struct Swarm {
 }
 
 /// Вспомогательная обёртка для Swarm
-pub type SharedSwarm = Arc<RwLock<Swarm>>;
+pub type SharedSwarm<P> = Arc<RwLock<Swarm<P>>>;
 
-impl Swarm {
+impl<P: BotPackage> Swarm<P> {
   /// Метод создания нового роя
   pub fn create() -> Self {
     Self {
       bots: Vec::new(),
       terminals: Vec::new(),
+      transmitters: Vec::new(),
       handles: Vec::new(),
       shared_storage: Arc::new(RwLock::new(Storage::new())),
     }
@@ -94,7 +99,7 @@ impl Swarm {
     }
   }
 
-  /// Параллельный синхронный for-each
+  /// Cинхронный for-each
   pub fn for_each<F, Fut>(&self, f: F)
   where
     F: Fn(Arc<BotTerminal>) -> Fut + Send + Sync + 'static,
@@ -112,12 +117,31 @@ impl Swarm {
     }
   }
 
+  /// Cинхронный for-each для передатчиков
+  pub fn for_each_transmitters<F, Fut>(&self, f: F)
+  where
+    F: Fn(Arc<BotTransmitter<P>>) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    let f = Arc::new(f);
+
+    for transmitter in &self.transmitters {
+      let f_clone = Arc::clone(&f);
+      let transmitter_clone = Arc::clone(transmitter);
+
+      tokio::spawn(async move {
+        f_clone(transmitter_clone).await;
+      });
+    }
+  }
+
   /// Метод добавления объекта бота в рой
   pub fn add_object(&mut self, object: SwarmObject) {
-    let mut bot = Bot::create(object.account)
+    let mut bot: Bot<P> = Bot::create(object.account)
       .set_connection_timeout(object.connection_timeout)
       .set_plugins(object.plugins)
-      .set_information(object.information);
+      .set_information(object.information)
+      .set_transmitter_interval(object.transmitter_interval);
 
     if object.use_shared_storage {
       bot = bot.set_shared_storage(self.shared_storage.clone());
@@ -131,10 +155,12 @@ impl Swarm {
       bot = bot.set_event_invoker(invoker);
     }
 
-    let terminal = Arc::clone(&bot.terminal);
+    let terminal = bot.get_terminal();
+    let transmitter = bot.get_transmitter();
 
     self.bots.push(bot);
     self.terminals.push(terminal);
+    self.transmitters.push(transmitter);
   }
 
   /// Метод запуска роя, блокирующий поток на время запуска
@@ -201,6 +227,7 @@ pub struct SwarmObject {
 
   plugins: BotPlugins,
   event_invoker: Option<EventInvoker>,
+  transmitter_interval: u64,
   connection_timeout: u64,
   proxy: Option<Proxy>,
   information: BotInformation,
@@ -214,6 +241,7 @@ impl SwarmObject {
       account: account,
       plugins: BotPlugins::default(),
       event_invoker: None,
+      transmitter_interval: 500,
       connection_timeout: 14000,
       proxy: None,
       information: BotInformation::default(),
@@ -230,6 +258,12 @@ impl SwarmObject {
   /// Метод установки инициатора событий
   pub fn set_event_invoker(mut self, invoker: EventInvoker) -> Self {
     self.event_invoker = Some(invoker);
+    self
+  }
+
+  /// Метод установки интервала передатчика
+  pub fn set_transmitter_interval(mut self, interval: u64) -> Self {
+    self.transmitter_interval = interval;
     self
   }
 
