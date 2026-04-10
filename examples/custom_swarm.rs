@@ -3,13 +3,36 @@ use std::io;
 use azalea_entity::HumanoidArm;
 use azalea_protocol::common::client_information::ClientInformation;
 use azalea_protocol::packets::game::s_interact::InteractionHand;
+use nurtex::bot::Bot;
 use nurtex::bot::account::BotAccount;
+use nurtex::bot::components::position::Position;
+use nurtex::bot::components::rotation::Rotation;
 use nurtex::bot::events::EventInvoker;
 use nurtex::bot::options::{AutoReconnectPlugin, BotInformation, BotPlugins};
 use nurtex::bot::terminal::BotCommand;
+use nurtex::bot::transmitter::BotPackage;
 use nurtex::swarm::SwarmObject;
 use nurtex::utils::time::sleep;
-use nurtex::{create_shared_swarm, launch_shared_swarm};
+use nurtex::{create_shared_swarm_with_package, launch_shared_swarm};
+
+// Объявляем структуру кастомного пакета данных
+#[derive(Clone)]
+struct CustomPackage {
+  username: String,
+  position: Position,
+  rotation: Rotation,
+}
+
+// Создаём логику описания кастомного пакета
+impl BotPackage for CustomPackage {
+  fn describe<P: BotPackage>(bot: &Bot<P>) -> Self {
+    Self {
+      username: bot.account.username.clone(),
+      position: bot.components.position,
+      rotation: bot.components.rotation,
+    }
+  }
+}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -39,13 +62,25 @@ async fn main() -> io::Result<()> {
         ..Default::default()
       })
       .set_event_invoker(event_invoker)
+      .set_transmitter_interval(2000)
       .set_use_shared_storage(i % 2 == 0);
 
     objects.push(object);
   }
 
-  // Создаём shared-рой
-  let swarm = create_shared_swarm(objects);
+  // Создаём shared-рой с указанием кастомного пакета
+  let swarm = create_shared_swarm_with_package::<CustomPackage>(objects);
+
+  // Инициализируем все передатчики роя
+  swarm.read().await.for_each_transmitters(|transmitter| async move {
+    let mut receiver = transmitter.subscribe();
+
+    while let Ok(package) = receiver.recv().await {
+      println!("------ Пакет данных бота {} ------", package.username);
+      println!("Позиция: {:?}", package.position);
+      println!("Ротация: {:?}", package.rotation);
+    }
+  });
 
   // Запускаем рой ботов на сервер
   launch_shared_swarm(swarm.clone(), "localhost", 25565, 1000);
