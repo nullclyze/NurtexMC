@@ -17,8 +17,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
+use uuid::Uuid;
 
-use crate::bot::account::BotAccount;
 use crate::bot::components::BotComponents;
 use crate::bot::components::position::Position;
 use crate::bot::components::rotation::Rotation;
@@ -31,6 +31,7 @@ use crate::bot::options::{BotInformation, BotPlugins, BotStatus};
 use crate::bot::physics::Physics;
 use crate::bot::terminal::{BotCommand, BotTerminal};
 use crate::bot::transmitter::{BotPackage, BotTransmitter, NullPackage};
+use crate::bot::world::entity::Entity;
 use crate::bot::world::{Storage, StorageLock};
 use crate::utils::time::{sleep, timestamp};
 
@@ -43,8 +44,7 @@ use crate::utils::time::{sleep, timestamp};
 /// Пример создания и подключения бота к серверу:
 /// ```rust, ignore
 /// // Создаём бота
-/// let account = BotAccount::new("NurtexBot");
-/// let mut bot: Bot<NullPackage> = Bot::create(account);
+/// let mut bot = create_bot("NurtexBot");
 ///
 /// // Подключаем бота к серверу
 /// bot.connect_to("server.com", 25565).await?;
@@ -53,8 +53,11 @@ pub struct Bot<P: BotPackage = NullPackage> {
   /// Статус подключения бота
   pub status: BotStatus,
 
-  /// Аккаунт бота
-  pub account: Arc<BotAccount>,
+  /// Юзернейм бота
+  pub username: String,
+
+  /// UUID бота
+  pub uuid: Uuid,
 
   /// Подключение бота в состоянии Play
   pub connection: Option<Connection<ClientboundGamePacket, ServerboundGamePacket>>,
@@ -91,12 +94,9 @@ impl<P: BotPackage> Bot<P> {
   /// Метод создания нового бота.
   ///
   /// Пример использования:
-  /// ```rust, ignore
-  /// // Создаём аккаунт
-  /// let account = BotAccount::new("NurtexBot");
-  ///  
+  /// ```rust, ignore  
   /// // Создаём и настраиваем бота
-  /// let mut bot: Bot<NullPackage> = Bot::create(account)
+  /// let mut bot: Bot<NullPackage> = Bot::create("NurtexBot".to_string())
   ///   .set_connection_timeout(30000)
   ///   .set_information(BotInformation {
   ///     client: ClientInformation {
@@ -109,19 +109,18 @@ impl<P: BotPackage> Bot<P> {
   /// // Подключаем бота к серверу
   /// bot.connect_to("server.com", 25565).await?;
   /// ```
-  pub fn create(account: BotAccount) -> Self {
+  pub fn create(username: String) -> Self {
     let (event_tx, _) = broadcast::channel(30);
     let (command_tx, command_rx) = mpsc::channel(30);
-
-    let bot_account = Arc::new(account);
 
     let bot = Self {
       status: BotStatus::Offline,
       terminal: Arc::new(BotTerminal {
-        account: Arc::clone(&bot_account),
+        username: username.clone(),
         cmd: command_tx,
       }),
-      account: bot_account,
+      username: username,
+      uuid: Uuid::nil(),
       connection: None,
       local_storage: Arc::new(RwLock::new(Storage::new())),
       shared_storage: None,
@@ -129,7 +128,7 @@ impl<P: BotPackage> Bot<P> {
       plugins: BotPlugins::default(),
       information: BotInformation::default(),
       physics: Physics::default(),
-      transmitter: Arc::new(BotTransmitter::new(30)), 
+      transmitter: Arc::new(BotTransmitter::new(30)),
       transmitter_interval: 500,
       connection_timeout: 14000,
       proxy: None,
@@ -161,6 +160,12 @@ impl<P: BotPackage> Bot<P> {
   /// Метод установки прокси
   pub fn set_proxy(mut self, proxy: Proxy) -> Self {
     self.proxy = Some(proxy);
+    self
+  }
+
+  /// Метод установки UUID
+  pub fn set_uuid(mut self, uuid: Uuid) -> Self {
+    self.uuid = uuid;
     self
   }
 
@@ -219,7 +224,7 @@ impl<P: BotPackage> Bot<P> {
 
     tokio::spawn(async move {
       while let Ok(event) = receiver.recv().await {
-        invoker.trigger(terminal.clone(), event).await;   
+        invoker.trigger(terminal.clone(), event).await;
       }
     });
   }
@@ -288,8 +293,8 @@ impl<P: BotPackage> Bot<P> {
     let mut conn = conn.login();
     conn
       .write(ServerboundHello {
-        name: self.account.username.clone(),
-        profile_id: self.account.uuid,
+        name: self.username.clone(),
+        profile_id: self.uuid,
       })
       .await?;
 
@@ -417,6 +422,7 @@ impl<P: BotPackage> Bot<P> {
     if self.plugins.physics.enabled {
       let storage = self.local_storage.read().await;
       self.components.tick(conn, &mut self.physics, &storage).await?;
+      drop(storage);
     }
 
     Ok(())
@@ -425,21 +431,17 @@ impl<P: BotPackage> Bot<P> {
   /// Метод блокировки хранилища (local / shared)
   pub async fn lock_storage<F>(&self, f: F)
   where
-    F: FnOnce(&mut Storage)
+    F: FnOnce(&mut Storage),
   {
     if let Some(shared_storage) = &self.shared_storage {
-      if let Ok(mut guard) = timeout(
-        Duration::from_millis(10),
-        shared_storage.write()
-      ).await {
+      if let Ok(mut guard) = timeout(Duration::from_millis(10), shared_storage.write()).await {
         f(&mut *guard);
+        drop(guard);
       }
     } else {
-      if let Ok(mut guard) = timeout(
-        Duration::from_millis(10),
-        self.local_storage.write()
-      ).await {
+      if let Ok(mut guard) = timeout(Duration::from_millis(10), self.local_storage.write()).await {
         f(&mut *guard);
+        drop(guard);
       }
     }
   }
@@ -479,8 +481,7 @@ impl<P: BotPackage> Bot<P> {
   pub async fn reconnect(&mut self, server_host: &str, server_port: u16, interval: u64) -> io::Result<()> {
     self.disconnect().await?;
     sleep(interval).await;
-    self.connect_to(server_host, server_port).await?;
-    Ok(())
+    self.connect_to(server_host, server_port).await
   }
 
   /// Метод отправки сообщения в чат
@@ -497,9 +498,7 @@ impl<P: BotPackage> Bot<P> {
         signature: None,
         last_seen_messages: LastSeenMessagesUpdate::default(),
       }))
-      .await?;
-
-    Ok(())
+      .await
   }
 
   /// Метод обновления позиции
@@ -536,6 +535,56 @@ impl<P: BotPackage> Bot<P> {
       old_rotation: old_rot,
       timestamp: timestamp(),
     }));
+  }
+
+  /// Метод получения текущей позиции
+  pub fn get_position(&self) -> Position {
+    self.components.position
+  }
+
+  /// Метод получения текущей ротации
+  pub fn get_rotation(&self) -> Rotation {
+    self.components.rotation
+  }
+
+  /// Метод получения сущности игрока по его юзернейму
+  pub async fn get_player_by_username(&self, username: String) -> Option<Entity> {
+    let mut entity = None;
+
+    self
+      .lock_storage(|storage| {
+        for (_, e) in &storage.entities {
+          let Some(player_info) = &e.player_info else {
+            continue;
+          };
+
+          if player_info.username == username {
+            entity = Some(e.clone());
+            return;
+          }
+        }
+      })
+      .await;
+
+    entity
+  }
+
+  /// Метод получения сущности игрока по его юзернейму
+  pub async fn get_entity_by_uuid(&self, uuid: Uuid) -> Option<Entity> {
+    let mut entity = None;
+
+    self
+      .lock_storage(|storage| {
+        for (_, e) in &storage.entities {
+          if e.uuid == uuid {
+            entity = Some(e.clone());
+            return;
+          }
+        }
+      })
+      .await;
+
+    entity
   }
 
   /// Метод отправки пакета данных

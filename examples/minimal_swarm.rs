@@ -1,6 +1,5 @@
 use std::io;
 
-use nurtex::bot::account::BotAccount;
 use nurtex::create_swarm;
 use nurtex::swarm::SwarmObject;
 
@@ -10,8 +9,7 @@ async fn main() -> io::Result<()> {
   let mut objects = Vec::new();
 
   for i in 0..5 {
-    let account = BotAccount::new(format!("bot_{}", i));
-    objects.push(SwarmObject::new(account));
+    objects.push(SwarmObject::new(format!("bot_{}", i)));
   }
 
   // Запускаем рой ботов на сервер с интервалом в 1000 мс

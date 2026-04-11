@@ -5,7 +5,6 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 
 use crate::bot::Bot;
-use crate::bot::account::BotAccount;
 use crate::bot::transmitter::{BotPackage, NullPackage};
 use crate::swarm::{SharedSwarm, Swarm, SwarmObject};
 use crate::utils::time::sleep;
@@ -27,9 +26,8 @@ pub mod export;
 /// // Подключаем бота к серверу
 /// bot.connect_to("server.com", 25565).await?;
 /// ```
-pub fn create_bot(username: &str) -> Bot<NullPackage> {
-  let account = BotAccount::new(username);
-  Bot::create(account)
+pub fn create_bot(username: impl Into<String>) -> Bot<NullPackage> {
+  Bot::create(username.into())
 }
 
 /// Вспомогательная функция создания бота с кастомным пакетом данных.
@@ -42,9 +40,8 @@ pub fn create_bot(username: &str) -> Bot<NullPackage> {
 /// // Запускаем бота на сервер
 /// bot.connect_to("server.com", 25565).await?;
 /// ```
-pub fn create_bot_with_package<P: BotPackage>(username: &str) -> Bot<P> {
-  let account = BotAccount::new(username);
-  Bot::create(account)
+pub fn create_bot_with_package<P: BotPackage>(username: impl Into<String>) -> Bot<P> {
+  Bot::create(username.into())
 }
 
 /// Вспомогательная функция создания роя ботов с дефолтным пакетом.
@@ -56,8 +53,7 @@ pub fn create_bot_with_package<P: BotPackage>(username: &str) -> Bot<P> {
 /// let mut objects = Vec::new();
 ///
 /// for i in 0..5 {
-///   let account = BotAccount::new(format!("bot_{}", i));
-///   objects.push(SwarmObject::new(account));
+///   objects.push(SwarmObject::new(format!("bot_{}", i)));
 /// }
 ///
 /// // Создаём рой
@@ -82,7 +78,7 @@ pub fn create_swarm(objects: Vec<SwarmObject>) -> Swarm<NullPackage> {
 /// ```rust, ignore
 /// // Создаём рой
 /// let mut swarm = create_swarm_with_package::<CustomPackage>(objects);
-/// 
+///
 /// // Запускаем рой на сервер
 /// swarm.launch("server.com", 25565, 1000).await;
 /// ```

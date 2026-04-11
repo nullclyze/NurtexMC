@@ -21,7 +21,7 @@ use crate::bot::world::StorageLock;
 /// impl BotPackage for CustomPackage {
 ///     fn describe(bot: &Bot) -> Self {
 ///         Self {
-///             position: bot.components.position.clone(),
+///             position: bot.components.position,
 ///             health: bot.components.state.health,
 ///         }
 ///     }
@@ -31,8 +31,7 @@ use crate::bot::world::StorageLock;
 /// Пример использования своего пакета:
 /// ```rust, ignore
 /// // Создаём бота и задаём ему конкретный тип
-/// let account = BotAccount::new("NurtexBot");
-/// let bot: Bot<CustomPackage> = Bot::create(account);
+/// let bot = create_bot_with_package::<CustomPackage>("NurtexBot");
 ///
 /// // Прочая логика...
 /// ```
@@ -46,8 +45,7 @@ pub trait BotPackage: Clone + Send + 'static {
 /// Пример использования:
 /// ```rust, ignore
 /// // Создаём бота и задаём ему тип со стандартным пакетом данных
-/// let account = BotAccount::new("NurtexBot");
-/// let bot: Bot<StandardPackage> = Bot::create(account)
+/// let mut bot = create_bot_with_package::<StandardPackage>("NurtexBot")
 ///   .set_transmitter_interval(500); // Можно указать свой интервал (в мс)
 ///
 /// // Получаем передатчик бота для отдельной задачи

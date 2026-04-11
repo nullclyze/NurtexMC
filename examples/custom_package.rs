@@ -1,7 +1,6 @@
 use std::io;
 
 use nurtex::bot::Bot;
-use nurtex::bot::account::BotAccount;
 use nurtex::bot::components::position::Position;
 use nurtex::bot::components::rotation::Rotation;
 use nurtex::bot::transmitter::BotPackage;
@@ -31,8 +30,7 @@ impl BotPackage for CustomPackage {
 #[tokio::main]
 async fn main() -> io::Result<()> {
   // Создаём бота и явно указываем его тип
-  let account = BotAccount::new("NurtexBot");
-  let bot: Bot<CustomPackage> = Bot::create(account);
+  let bot: Bot<CustomPackage> = Bot::create("NurtexBot".to_string());
 
   // Получаем передатчик пакетов для отдельной задачи
   let transmitter = bot.get_transmitter();

@@ -6,9 +6,9 @@ use std::sync::Arc;
 use azalea_protocol::connect::Proxy;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 use crate::bot::Bot;
-use crate::bot::account::BotAccount;
 use crate::bot::events::EventInvoker;
 use crate::bot::options::{BotInformation, BotPlugins};
 use crate::bot::terminal::{BotCommand, BotTerminal};
@@ -137,7 +137,8 @@ impl<P: BotPackage> Swarm<P> {
 
   /// Метод добавления объекта бота в рой
   pub fn add_object(&mut self, object: SwarmObject) {
-    let mut bot: Bot<P> = Bot::create(object.account)
+    let mut bot: Bot<P> = Bot::create(object.username)
+      .set_uuid(object.uuid)
       .set_connection_timeout(object.connection_timeout)
       .set_plugins(object.plugins)
       .set_information(object.information)
@@ -183,7 +184,7 @@ impl<P: BotPackage> Swarm<P> {
   /// Метод отправки команды определённому боту из роя
   pub async fn send_to(&self, username: &str, command: BotCommand) {
     for terminal in &self.terminals {
-      if terminal.account.username.as_str() == username {
+      if terminal.username.as_str() == username {
         terminal.send(command).await;
         break;
       }
@@ -225,9 +226,10 @@ impl<P: BotPackage> Swarm<P> {
 /// Объект роя, выполняющий роль **вспомогательной структуры**, которая содержит информацию.
 /// Данный объект **НЕ является** полноценным ботом для роя, это лишь обёртка над его опциями
 pub struct SwarmObject {
-  /// Аккаунт объекта бота
-  pub account: BotAccount,
+  /// Юзернейм объекта
+  pub username: String,
 
+  uuid: Uuid,
   plugins: BotPlugins,
   event_invoker: Option<EventInvoker>,
   transmitter_interval: u64,
@@ -239,9 +241,10 @@ pub struct SwarmObject {
 
 impl SwarmObject {
   /// Метод создания нового объекта роя
-  pub fn new(account: BotAccount) -> Self {
+  pub fn new(username: impl Into<String>) -> Self {
     Self {
-      account: account,
+      username: username.into(),
+      uuid: Uuid::nil(),
       plugins: BotPlugins::default(),
       event_invoker: None,
       transmitter_interval: 500,
@@ -250,6 +253,12 @@ impl SwarmObject {
       information: BotInformation::default(),
       use_shared_storage: true,
     }
+  }
+
+  /// Метод установки UUID
+  pub fn set_uuid(mut self, uuid: Uuid) -> Self {
+    self.uuid = uuid;
+    self
   }
 
   /// Метод установки плагинов

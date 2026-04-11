@@ -4,7 +4,6 @@ use azalea_entity::HumanoidArm;
 use azalea_protocol::common::client_information::ClientInformation;
 use azalea_protocol::packets::game::s_interact::InteractionHand;
 use nurtex::bot::Bot;
-use nurtex::bot::account::BotAccount;
 use nurtex::bot::components::position::Position;
 use nurtex::bot::components::rotation::Rotation;
 use nurtex::bot::events::EventInvoker;
@@ -27,7 +26,7 @@ struct CustomPackage {
 impl BotPackage for CustomPackage {
   fn describe<P: BotPackage>(bot: &Bot<P>) -> Self {
     Self {
-      username: bot.account.username.clone(),
+      username: bot.username.clone(),
       position: bot.components.position,
       rotation: bot.components.rotation,
     }
@@ -40,13 +39,11 @@ async fn main() -> io::Result<()> {
   let mut objects = Vec::new();
 
   for i in 0..5 {
-    let account = BotAccount::new(format!("bot_{}", i));
-
     // Создаём EventInvoker
     let event_invoker = create_event_invoker();
 
     // Создаём объект роя и настраиваем его
-    let object = SwarmObject::new(account)
+    let object = SwarmObject::new(format!("bot_{}", i))
       .set_plugins(BotPlugins {
         auto_reconnect: AutoReconnectPlugin {
           enabled: true,
@@ -125,19 +122,19 @@ fn create_event_invoker() -> EventInvoker {
   let mut event_invoker = EventInvoker::new();
 
   event_invoker.on_spawn(|terminal| async move {
-    println!("Бот {} заспавнился!", terminal.account.username);
+    println!("Бот {} заспавнился!", terminal.username);
   });
 
   event_invoker.on_chat(|terminal, payload| async move {
-    println!("Бот {} получил сообщение: {}", terminal.account.username, payload.message);
+    println!("Бот {} получил сообщение: {}", terminal.username, payload.message);
   });
 
   event_invoker.on_death(|terminal| async move {
-    println!("Бот {} умер.", terminal.account.username);
+    println!("Бот {} умер.", terminal.username);
   });
 
   event_invoker.on_disconnect(|terminal, payload| async move {
-    println!("Бот {} отключился по причине: {}", terminal.account.username, payload.reason);
+    println!("Бот {} отключился по причине: {}", terminal.username, payload.reason);
   });
 
   event_invoker

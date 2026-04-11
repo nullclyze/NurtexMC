@@ -16,7 +16,7 @@ use crate::bot::components::velocity::Velocity;
 use crate::bot::events::{BotEvent, ChatPayload};
 use crate::bot::events::{ChunkPayload, DisconnectPayload};
 use crate::bot::transmitter::BotPackage;
-use crate::bot::world::{Entity, PlayerInfo};
+use crate::bot::world::entity::{Entity, PlayerInfo};
 use crate::utils::time::timestamp;
 
 /// Тип обработчика пакетов
@@ -44,44 +44,51 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
         player_info: None,
       };
 
-      bot.lock_storage(|storage| {
-        storage.entities.insert(p.id.0, entity);
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          storage.entities.insert(p.id.0, entity);
+        })
+        .await;
     }
     ClientboundGamePacket::RemoveEntities(p) => {
       let mut ids = Vec::new();
       p.entity_ids.iter().for_each(|id| ids.push(id.0));
 
-      bot.lock_storage(|storage| {
-        storage.entities.retain(|id, _| !ids.contains(id));
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          storage.entities.retain(|id, _| !ids.contains(id));
+        })
+        .await;
     }
     ClientboundGamePacket::LevelChunkWithLight(p) => {
       let chunk_data = p.chunk_data.data.to_vec();
 
-      bot.lock_storage(|storage| {
-        storage.load_chunk(p.x, p.z, chunk_data);
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          storage.load_chunk(p.x, p.z, chunk_data);
+        })
+        .await;
 
-      bot.emit_event(BotEvent::ChunkLoaded(ChunkPayload {
-        x: p.x,
-        z: p.z,
-      }));
+      bot.emit_event(BotEvent::ChunkLoaded(ChunkPayload { x: p.x, z: p.z }));
     }
     ClientboundGamePacket::ForgetLevelChunk(p) => {
       let chunk_pos = ChunkPos::new(p.pos.x, p.pos.z);
 
-      bot.lock_storage(|storage| {
-        storage.remove_chunk(&chunk_pos);
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          storage.remove_chunk(&chunk_pos);
+        })
+        .await;
     }
     ClientboundGamePacket::BlockUpdate(p) => {
       let pos = BlockPos::new(p.pos.x, p.pos.y, p.pos.z);
       let block_state = p.block_state.id() as u32;
 
-      bot.lock_storage(|storage| {
-        storage.set_block(&pos, block_state);
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          storage.set_block(&pos, block_state);
+        })
+        .await;
     }
     ClientboundGamePacket::SectionBlocksUpdate(p) => {
       let mut blocks = HashMap::new();
@@ -98,9 +105,11 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
         blocks.insert(pos, block_state);
       }
 
-      bot.lock_storage(|storage| {
-        storage.set_block_section(blocks);
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          storage.set_block_section(blocks);
+        })
+        .await;
     }
     ClientboundGamePacket::Login(p) => {
       let profile = &mut bot.components.profile;
@@ -127,58 +136,66 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
         return Ok(true);
       }
 
-      bot.lock_storage(|storage| {
-        if let Some(entity) = storage.entities.get_mut(&p.entity_id.0) {
-          entity.position.apply_velocity(Velocity::from_vec3(p.delta.clone().into()));
-          entity.on_ground = p.on_ground;
-        }
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          if let Some(entity) = storage.entities.get_mut(&p.entity_id.0) {
+            entity.position.apply_velocity(Velocity::from_vec3(p.delta.clone().into()));
+            entity.on_ground = p.on_ground;
+          }
+        })
+        .await;
     }
     ClientboundGamePacket::MoveEntityRot(p) => {
-      bot.lock_storage(|storage| {
-        if let Some(entity) = storage.entities.get_mut(&p.entity_id.0) {
-          entity.on_ground = p.on_ground;
+      bot
+        .lock_storage(|storage| {
+          if let Some(entity) = storage.entities.get_mut(&p.entity_id.0) {
+            entity.on_ground = p.on_ground;
 
-          let yaw = entity.rotation.yaw + p.y_rot as f32;
-          let pitch = entity.rotation.pitch + p.x_rot as f32;
+            let yaw = entity.rotation.yaw + p.y_rot as f32;
+            let pitch = entity.rotation.pitch + p.x_rot as f32;
 
-          entity.rotation = Rotation::new(yaw, pitch);
-        }
-      }).await;
+            entity.rotation = Rotation::new(yaw, pitch);
+          }
+        })
+        .await;
     }
     ClientboundGamePacket::MoveEntityPosRot(p) => {
-      bot.lock_storage(|storage| {
-        if let Some(entity) = storage.entities.get_mut(&p.entity_id.0) {
-          entity.position.apply_velocity(Velocity::from_vec3(p.delta.clone().into()));
-          entity.on_ground = p.on_ground;
+      bot
+        .lock_storage(|storage| {
+          if let Some(entity) = storage.entities.get_mut(&p.entity_id.0) {
+            entity.position.apply_velocity(Velocity::from_vec3(p.delta.clone().into()));
+            entity.on_ground = p.on_ground;
 
-          let yaw = entity.rotation.yaw + p.y_rot as f32;
-          let pitch = entity.rotation.pitch + p.x_rot as f32;
+            let yaw = entity.rotation.yaw + p.y_rot as f32;
+            let pitch = entity.rotation.pitch + p.x_rot as f32;
 
-          entity.rotation = Rotation::new(yaw, pitch);
-        }
-      }).await;
+            entity.rotation = Rotation::new(yaw, pitch);
+          }
+        })
+        .await;
     }
     ClientboundGamePacket::PlayerInfoUpdate(p) => {
       for entry in &p.entries {
-        if entry.profile.name == bot.account.username {
+        if entry.profile.name == bot.username {
           bot.components.profile.ping = entry.latency;
         } else {
-          bot.lock_storage(|storage| {
-            for (_id, entity) in &mut storage.entities {
-              if entity.uuid != entry.profile.uuid {
-                continue;
+          bot
+            .lock_storage(|storage| {
+              for (_id, entity) in &mut storage.entities {
+                if entity.uuid != entry.profile.uuid {
+                  continue;
+                }
+
+                let player_info = PlayerInfo {
+                  username: entry.profile.name.clone(),
+                  game_mode: entry.game_mode.name().to_string(),
+                  ping: entry.latency,
+                };
+
+                entity.player_info = Some(player_info);
               }
-
-              let player_info = PlayerInfo {
-                username: entry.profile.name.clone(),
-                game_mode: entry.game_mode.name().to_string(),
-                ping: entry.latency,
-              };
-
-              entity.player_info = Some(player_info);
-            }
-          }).await;
+            })
+            .await;
         }
       }
     }
@@ -192,6 +209,7 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
       bot.update_rotation(Rotation::new(p.y_rot, p.x_rot));
     }
     ClientboundGamePacket::PlayerPosition(p) => {
+      println!("Server teleported bot to: {:.2}, {:.2}, {:.2}", p.change.pos.x, p.change.pos.y, p.change.pos.z);
       bot.update_position(Position::new(p.change.pos.x, p.change.pos.y, p.change.pos.z));
       bot.update_rotation(Rotation::from_look_direction(p.change.look_direction));
 
@@ -205,11 +223,13 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
       if bot.is_this_my_entity_id(p.id.0) {
         bot.components.velocity = Velocity::from_vec3(p.delta.to_vec3());
       } else {
-        bot.lock_storage(|storage| {
-          if let Some(entity) = storage.entities.get_mut(&p.id.0) {
-            entity.velocity = Velocity::from_vec3(p.delta.to_vec3());
-          }
-        }).await;
+        bot
+          .lock_storage(|storage| {
+            if let Some(entity) = storage.entities.get_mut(&p.id.0) {
+              entity.velocity = Velocity::from_vec3(p.delta.to_vec3());
+            }
+          })
+          .await;
       }
     }
     ClientboundGamePacket::EntityPositionSync(p) => {
@@ -217,14 +237,16 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
         return Ok(true);
       }
 
-      bot.lock_storage(|storage| {
-        if let Some(entity) = storage.entities.get_mut(&p.id.0) {
-          entity.position = Position::from_vec3(p.values.pos);
-          entity.velocity = Velocity::from_vec3(p.values.delta);
-          entity.rotation = Rotation::from_look_direction(p.values.look_direction);
-          entity.on_ground = p.on_ground;
-        }
-      }).await;
+      bot
+        .lock_storage(|storage| {
+          if let Some(entity) = storage.entities.get_mut(&p.id.0) {
+            entity.position = Position::from_vec3(p.values.pos);
+            entity.velocity = Velocity::from_vec3(p.values.delta);
+            entity.rotation = Rotation::from_look_direction(p.values.look_direction);
+            entity.on_ground = p.on_ground;
+          }
+        })
+        .await;
     }
     ClientboundGamePacket::KeepAlive(p) => {
       let Some(conn) = &mut bot.connection else {

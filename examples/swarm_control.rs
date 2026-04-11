@@ -1,6 +1,5 @@
 use std::io;
 
-use nurtex::bot::account::BotAccount;
 use nurtex::swarm::SwarmObject;
 use nurtex::utils::time::sleep;
 use nurtex::{create_shared_swarm, destroy_shared_swarm, launch_shared_swarm};
@@ -11,8 +10,7 @@ async fn main() -> io::Result<()> {
   let mut objects = Vec::new();
 
   for i in 0..5 {
-    let account = BotAccount::new(format!("bot_{}", i));
-    objects.push(SwarmObject::new(account));
+    objects.push(SwarmObject::new(format!("bot_{}", i)));
   }
 
   // Создаём shared-рой

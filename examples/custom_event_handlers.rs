@@ -13,22 +13,22 @@ async fn main() -> io::Result<()> {
 
   // Устанавливаем обработчик события "spawn"
   event_invoker.on_spawn(|terminal| async move {
-    println!("Бот {} заспавнился!", terminal.account.username);
+    println!("Бот {} заспавнился!", terminal.username);
   });
 
   // Устанавливаем обработчик события "chat"
   event_invoker.on_chat(|terminal, payload| async move {
-    println!("Бот {} получил сообщение: {}", terminal.account.username, payload.message);
+    println!("Бот {} получил сообщение: {}", terminal.username, payload.message);
   });
 
   // Устанавливаем обработчик события "death"
   event_invoker.on_death(|terminal| async move {
-    println!("Бот {} умер.", terminal.account.username);
+    println!("Бот {} умер.", terminal.username);
   });
 
   // Устанавливаем обработчик события "disconnect"
   event_invoker.on_disconnect(|terminal, payload| async move {
-    println!("Бот {} отключился по причине: {}", terminal.account.username, payload.reason);
+    println!("Бот {} отключился по причине: {}", terminal.username, payload.reason);
   });
 
   bot

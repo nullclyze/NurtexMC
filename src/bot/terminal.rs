@@ -1,9 +1,5 @@
-use std::sync::Arc;
-
 use azalea_protocol::packets::game::{ServerboundGamePacket, s_interact::InteractionHand};
 use tokio::sync::mpsc;
-
-use crate::bot::account::BotAccount;
 
 /// Команда для терминала бота
 #[derive(Clone, Debug)]
@@ -24,8 +20,7 @@ pub enum BotCommand {
 /// Пример использования:
 /// ```rust, ignore
 /// // Создаём бота
-/// let account = BotAccount::new("NurtexBot");
-/// let bot = Bot::create(account);
+/// let mut bot = create_bot("NurtexBot");
 ///
 /// // Клонируем терминал до запуска бота
 /// let terminal = bot.terminal.clone();
@@ -36,7 +31,7 @@ pub enum BotCommand {
 ///   tokio::time::sleep(Duration::from_millis(5000)).await;
 ///
 ///   // Получаем юзернейм бота через терминал
-///   let username = terminal.account.username;
+///   let username = terminal.username;
 ///
 ///   // Отправляем сообщение в чат при помощи терминала
 ///   terminal.chat(format!("Привет, мир! Мой юзернейм: {}", username)).await;
@@ -47,8 +42,8 @@ pub enum BotCommand {
 /// ```
 #[derive(Clone)]
 pub struct BotTerminal {
-  /// Аккаунт получателя (или же бота)
-  pub account: Arc<BotAccount>,
+  /// Юзернейм получателя (или же бота)
+  pub username: String,
 
   /// Отправитель команд
   pub cmd: mpsc::Sender<BotCommand>,

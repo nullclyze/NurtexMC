@@ -3,7 +3,6 @@ mod tests {
   use std::io;
 
   use nurtex::bot::Bot;
-  use nurtex::bot::account::BotAccount;
   use nurtex::bot::components::position::Position;
   use nurtex::bot::events::EventInvoker;
   use nurtex::bot::options::{AutoReconnectPlugin, BotPlugins};
@@ -21,7 +20,7 @@ mod tests {
   impl BotPackage for MyPackage {
     fn describe<P: BotPackage>(bot: &Bot<P>) -> Self {
       Self {
-        username: bot.account.username.clone(),
+        username: bot.username.clone(),
         position: bot.components.position,
       }
     }
@@ -35,22 +34,23 @@ mod tests {
       let mut event_invoker = EventInvoker::new();
 
       event_invoker.on_spawn(|terminal| async move {
-        println!("Бот {} заспавнился!", terminal.account.username);
+        println!("Бот {} заспавнился!", terminal.username);
       });
 
       event_invoker.on_chat(|terminal, payload| async move {
-        println!("Бот {} получил сообщение: {}", terminal.account.username, payload.message);
+        println!("Бот {} получил сообщение: {}", terminal.username, payload.message);
       });
 
-      let account = BotAccount::new(format!("bot_{}", i));
-
-      let object = SwarmObject::new(account).set_event_invoker(event_invoker).set_plugins(BotPlugins {
-        auto_reconnect: AutoReconnectPlugin {
-          enabled: true,
-          reconnect_delay: 1000,
-        },
-        ..Default::default()
-      }).set_transmitter_interval(5000);
+      let object = SwarmObject::new(format!("bot_{}", i))
+        .set_event_invoker(event_invoker)
+        .set_plugins(BotPlugins {
+          auto_reconnect: AutoReconnectPlugin {
+            enabled: true,
+            reconnect_delay: 1000,
+          },
+          ..Default::default()
+        })
+        .set_transmitter_interval(5000);
 
       objects.push(object);
     }
@@ -69,10 +69,14 @@ mod tests {
 
     sleep(16000).await;
 
-    swarm.read().await.for_each_async(|terminal| async move {
-      terminal.reconnect("localhost", 25565, 1000).await;
-      sleep(500).await;
-    }).await;
+    swarm
+      .read()
+      .await
+      .for_each_async(|terminal| async move {
+        terminal.reconnect("localhost", 25565, 1000).await;
+        sleep(500).await;
+      })
+      .await;
 
     sleep(16000).await;
 
