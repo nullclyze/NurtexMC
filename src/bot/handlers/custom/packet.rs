@@ -112,6 +112,8 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
         .await;
     }
     ClientboundGamePacket::Login(p) => {
+      bot.emit_event(BotEvent::Spawn);
+      
       let profile = &mut bot.components.profile;
 
       profile.entity_id = Some(p.player_id.0);
@@ -128,8 +130,6 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
           }))
           .await?;
       }
-
-      bot.emit_event(BotEvent::Spawn);
     }
     ClientboundGamePacket::MoveEntityPos(p) => {
       if bot.is_this_my_entity_id(p.entity_id.0) {

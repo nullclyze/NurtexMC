@@ -19,7 +19,7 @@ use azalea_protocol::packets::login::s_hello::ServerboundHello;
 use azalea_protocol::packets::login::s_login_acknowledged::ServerboundLoginAcknowledged;
 use azalea_protocol::packets::{ClientIntention, PROTOCOL_VERSION};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use uuid::Uuid;
@@ -87,7 +87,6 @@ pub struct Bot<P: BotPackage = NullPackage> {
   connection_timeout: u64,
   proxy: Option<Proxy>,
   information: BotInformation,
-  event_sender: broadcast::Sender<BotEvent>,
   command_receiver: mpsc::Receiver<BotCommand>,
   packet_processor: PacketProcessorFn<P>,
   event_invoker: Arc<EventInvoker>,
@@ -113,7 +112,6 @@ impl<P: BotPackage> Bot<P> {
   /// bot.connect_to("server.com", 25565).await?;
   /// ```
   pub fn create(username: String) -> Self {
-    let (event_tx, _) = broadcast::channel(30);
     let (command_tx, command_rx) = mpsc::channel(30);
 
     let bot = Self {
@@ -135,13 +133,10 @@ impl<P: BotPackage> Bot<P> {
       transmitter_interval: 500,
       connection_timeout: 14000,
       proxy: None,
-      event_sender: event_tx,
       command_receiver: command_rx,
       packet_processor: default_packet_processor,
       event_invoker: Arc::new(EventInvoker::new()),
     };
-
-    bot.activate_invoker();
 
     bot
   }
@@ -212,24 +207,14 @@ impl<P: BotPackage> Bot<P> {
     &self.information
   }
 
-  /// Метод активации инициатора событий
-  fn activate_invoker(&self) {
-    let invoker = self.event_invoker.clone();
-    let terminal = self.terminal.clone();
-    let mut receiver = self.event_sender.subscribe();
-
-    tokio::spawn(async move {
-      while let Ok(event) = receiver.recv().await {
-        invoker.trigger(terminal.clone(), event).await;
-      }
-    });
-  }
-
   /// Метод отправки события всем получателям
   pub fn emit_event(&self, event: BotEvent) {
-    if self.event_sender.receiver_count() > 0 {
-      let _ = self.event_sender.send(event);
-    }
+    let invoker = self.event_invoker.clone();
+    let terminal = self.terminal.clone();
+
+    tokio::spawn(async move {
+      invoker.trigger(terminal.clone(), event).await;
+    });
   }
 
   /// Метод создания подключения
@@ -587,13 +572,10 @@ impl<P: BotPackage> Bot<P> {
 
   /// Метод отправки пакета данных
   fn emit_package(&self) {
-    if self.transmitter.receiver_count() < 1 {
-      return;
+    if self.transmitter.receiver_count() > 0 {
+      let package = P::describe(self);
+      self.transmitter.emit(package);
     }
-
-    let package = P::describe(self);
-
-    self.transmitter.emit(package);
   }
 
   /// Метод получения терминала

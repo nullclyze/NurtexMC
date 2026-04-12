@@ -36,6 +36,10 @@ mod tests {
 
     let mut event_invoker = EventInvoker::new();
 
+    event_invoker.on_death(|terminal| async move {
+      println!("Бот {} умер.", terminal.username);
+    });
+
     event_invoker.on_spawn(|terminal| async move {
       println!("Бот {} заспавнился!", terminal.username);
     });
