@@ -3,6 +3,7 @@ use std::io::{self};
 use azalea_protocol::connect::Connection;
 use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundGamePacket};
 
+use crate::bot::components::experience::Experience;
 use crate::bot::components::position::Position;
 use crate::bot::components::profile::Profile;
 use crate::bot::components::rotation::Rotation;
@@ -18,6 +19,7 @@ pub struct BotComponents {
   pub position: Position,
   pub rotation: Rotation,
   pub velocity: Velocity,
+  pub experience: Experience
 }
 
 impl Default for BotComponents {
@@ -28,6 +30,7 @@ impl Default for BotComponents {
       position: Position::zero(),
       rotation: Rotation::zero(),
       velocity: Velocity::zero(),
+      experience: Experience::default()
     }
   }
 }

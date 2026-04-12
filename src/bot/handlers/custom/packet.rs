@@ -315,6 +315,12 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
         }))
         .await?;
     }
+    ClientboundGamePacket::SetExperience(p) => {
+      let experience = &mut bot.components.experience;
+      experience.level = p.experience_level;
+      experience.progress = p.experience_progress;
+      experience.total = p.total_experience;
+    }
     _ => return Ok(true),
   }
 
