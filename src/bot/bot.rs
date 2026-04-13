@@ -12,7 +12,9 @@ use azalea_protocol::common::movements::MoveFlags;
 use azalea_protocol::connect::{Connection, Proxy};
 use azalea_protocol::packets::game::s_chat::LastSeenMessagesUpdate;
 use azalea_protocol::packets::game::s_player_action::Action;
-use azalea_protocol::packets::game::{ClientboundGamePacket, ServerboundChat, ServerboundGamePacket, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundSwing, ServerboundUseItem};
+use azalea_protocol::packets::game::{
+  ClientboundGamePacket, ServerboundChat, ServerboundGamePacket, ServerboundMovePlayerPos, ServerboundMovePlayerRot, ServerboundPlayerAction, ServerboundSwing, ServerboundUseItem,
+};
 use azalea_protocol::packets::handshake::s_intention::ServerboundIntention;
 use azalea_protocol::packets::handshake::{ClientboundHandshakePacket, ServerboundHandshakePacket};
 use azalea_protocol::packets::login::s_hello::ServerboundHello;
@@ -433,6 +435,8 @@ impl<P: BotPackage> Bot<P> {
   pub async fn clear(&mut self) {
     let mut storage = self.local_storage.write().await;
     storage.clear();
+
+    self.components.inventory.containers.clear();
   }
 
   /// Метод закрытия TcpStream (отключение от сервера)

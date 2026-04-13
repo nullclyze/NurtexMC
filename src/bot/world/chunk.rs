@@ -1,6 +1,6 @@
-use azalea_core::position::{ChunkPos, ChunkSectionBlockPos};
-use azalea_buf::AzaleaRead;
 use azalea_block::BlockState;
+use azalea_buf::AzaleaRead;
+use azalea_core::position::{ChunkPos, ChunkSectionBlockPos};
 use std::io::Cursor;
 
 /// Чанк мира
@@ -16,20 +16,17 @@ pub struct Chunk {
 impl Chunk {
   // Метод создания нового чанка
   pub fn new(pos: ChunkPos, raw_data: Vec<u8>) -> Self {
-    let mut chunk = Self {
-      pos,
-      sections: vec![],
-    };
-    
+    let mut chunk = Self { pos, sections: vec![] };
+
     chunk.parse_chunk_data(&raw_data);
-    
+
     chunk
   }
-  
+
   /// Метод парсинга данных чанка
   fn parse_chunk_data(&mut self, raw_data: &[u8]) {
     let mut cursor = Cursor::new(raw_data);
-    
+
     for _ in 0..24 {
       match azalea_world::Section::azalea_read(&mut cursor) {
         Ok(section) => {
@@ -54,7 +51,7 @@ impl Chunk {
     let section = self.sections.get(section_index)?;
     let pos = ChunkSectionBlockPos::new(x as u8, section_y as u8, z as u8);
     let block_state = section.get_block_state(pos);
-    
+
     Some(block_state.id() as u32)
   }
 

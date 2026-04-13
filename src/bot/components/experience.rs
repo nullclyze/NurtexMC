@@ -1,9 +1,9 @@
 /// Структура данных опыта
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Experience {
   pub level: u32,
   pub progress: f32,
-  pub total: u32
+  pub total: u32,
 }
 
 impl Default for Experience {
@@ -11,7 +11,7 @@ impl Default for Experience {
     Self {
       level: 0,
       progress: 0.0,
-      total: 0
+      total: 0,
     }
   }
 }

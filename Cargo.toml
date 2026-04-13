@@ -24,6 +24,7 @@ azalea-core = "0.15"
 azalea-buf = "0.15"
 azalea-world = "0.15"
 azalea-block = "0.15"
+azalea-inventory = "0.15"
 socks5-impl = { version = "0.7.3", features = ["client"] }
 uuid = { version = "1", features = ["v4"] }
 hashbrown = "0.16.1"

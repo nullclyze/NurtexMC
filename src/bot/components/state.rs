@@ -1,5 +1,5 @@
 /// Структура данных состояния
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct State {
   pub health: f32,
   pub satiety: u32,

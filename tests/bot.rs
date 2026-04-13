@@ -3,6 +3,7 @@ mod tests {
   use std::io;
 
   use nurtex::bot::Bot;
+  use nurtex::bot::components::inventory::Inventory;
   use nurtex::bot::components::position::Position;
   use nurtex::bot::events::EventInvoker;
   use nurtex::bot::transmitter::BotPackage;
@@ -12,13 +13,15 @@ mod tests {
   struct MyPackage {
     position: Position,
     on_ground: bool,
+    inventory: Inventory,
   }
 
   impl BotPackage for MyPackage {
     fn describe<P: BotPackage>(bot: &Bot<P>) -> Self {
-      Self { 
+      Self {
         position: bot.get_position(),
-        on_ground: bot.physics.on_ground
+        on_ground: bot.physics.on_ground,
+        inventory: bot.components.inventory.clone(),
       }
     }
   }
@@ -33,8 +36,13 @@ mod tests {
       let mut receiver = transmitter.subscribe();
 
       while let Ok(package) = receiver.recv().await {
+        println!("-----------------------------------------");
         println!("Позиция бота: {:?}", package.position);
         println!("Состояние on_ground: {}", package.on_ground);
+
+        for (id, container) in package.inventory.containers {
+          println!("Контейнер {}: {:?}", id, container);
+        }
       }
     });
 

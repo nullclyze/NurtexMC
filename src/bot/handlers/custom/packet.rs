@@ -10,6 +10,7 @@ use azalea_protocol::packets::game::{
 use hashbrown::HashMap;
 
 use crate::bot::Bot;
+use crate::bot::components::inventory::InventoryItem;
 use crate::bot::components::position::Position;
 use crate::bot::components::rotation::Rotation;
 use crate::bot::components::velocity::Velocity;
@@ -125,7 +126,7 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
           }))
           .await?;
       }
-      
+
       let profile = &mut bot.components.profile;
 
       profile.entity_id = Some(p.player_id.0);
@@ -320,6 +321,23 @@ async fn process_packet<P: BotPackage>(bot: &mut Bot<P>, packet: Arc<Clientbound
       experience.level = p.experience_level;
       experience.progress = p.experience_progress;
       experience.total = p.total_experience;
+    }
+    ClientboundGamePacket::ContainerSetContent(p) => {
+      if bot.components.inventory.get_container(p.container_id).is_none() {
+        bot.components.inventory.add_container(p.container_id);
+      }
+
+      if let Some(container) = bot.components.inventory.get_mut_container(p.container_id) {
+        container.carried_item = p.carried_item.clone();
+
+        for (slot, item) in p.items.iter().enumerate() {
+          container.items.push(InventoryItem {
+            name: item.kind().to_string(),
+            count: item.count(),
+            slot: slot as u32,
+          });
+        }
+      }
     }
     _ => return Ok(true),
   }

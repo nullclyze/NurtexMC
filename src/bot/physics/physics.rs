@@ -49,7 +49,13 @@ impl Physics {
   }
 
   /// Метод отправки пакета движения серверу
-  pub async fn send_movement_packets(&mut self, conn: &mut Connection<ClientboundGamePacket, ServerboundGamePacket>, position: Position, rotation: Rotation, _velocity: &Velocity) -> io::Result<()> {
+  pub async fn send_movement_packets(
+    &mut self,
+    conn: &mut Connection<ClientboundGamePacket, ServerboundGamePacket>,
+    position: Position,
+    rotation: Rotation,
+    _velocity: &Velocity,
+  ) -> io::Result<()> {
     let pos_delta = position.delta(self.last_sent_position);
     let is_pos_changed = pos_delta != Position::zero();
 

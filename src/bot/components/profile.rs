@@ -1,5 +1,5 @@
 /// Структура данных профиля
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Profile {
   pub entity_id: Option<i32>,
   pub game_mode: String,
