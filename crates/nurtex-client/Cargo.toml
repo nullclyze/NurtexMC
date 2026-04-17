@@ -1,0 +1,21 @@
+[package]
+name = "nurtex-client"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Library for creating Minecraft clients."
+repository = "https://github.com/NurtexMC/nurtex"
+homepage = "https://github.com/NurtexMC/nurtex"
+documentation = "https://docs.rs/nurtex-client/latest/"
+readme = "README.md"
+keywords = ["minecraft", "client"]
+categories = ["games"]
+
+[lib]
+name = "nurtex_client"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { workspace = true }
+uuid = { workspace = true }
+nurtex-protocol = { workspace = true }

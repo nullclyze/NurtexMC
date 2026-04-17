@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/nurtex-client",
   "crates/nurtex-codec", 
   "crates/nurtex-encrypt",
   "crates/nurtex-protocol",

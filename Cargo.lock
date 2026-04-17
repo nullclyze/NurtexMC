@@ -516,6 +516,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nurtex-client"
+version = "0.1.0"
+dependencies = [
+ "nurtex-protocol",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nurtex-codec"
 version = "0.1.0"
 dependencies = [
