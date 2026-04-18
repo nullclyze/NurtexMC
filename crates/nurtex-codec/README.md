@@ -1,3 +1,3 @@
-# `nurtex-parser`
+# `nurtex-codec`
 
-Library for parsing Minecraft packets.
+Library for serializing types from the Minecraft protocol.
