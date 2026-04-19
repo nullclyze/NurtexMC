@@ -1,9 +1,9 @@
-use std::io::{self, Cursor, Write};
+use std::io::{self, Cursor, Read, Write};
 
 use nurtex_codec::{Buffer, VarInt, VarLong};
 use uuid::Uuid;
 
-use crate::types::{LpVector3, PhysicsFlags, RelativeHand, Rotation, TeleportFlags, Vector3};
+use crate::types::{ClientCommand, LpVector3, PhysicsFlags, RelativeHand, Rotation, TeleportFlags, Vector3};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MultisideKeepAlive {
@@ -578,6 +578,106 @@ impl ClientsideRemoveEntities {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ClientsideDisconnect;
+
+impl ClientsideDisconnect {
+  pub fn read(_buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+    Some(Self)
+  }
+
+  pub fn write(&self, _buffer: &mut impl Write) -> io::Result<()> {
+    Ok(())
+  }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClientsidePlayerChat {
+  pub global_index: i32,
+  pub sender_uuid: Uuid,
+  pub index: i32,
+  pub message_signature: Option<Vec<u8>>,
+  pub message: String,
+  pub timestamp: i64,
+  pub salt: i64,
+  pub previous_messages: Vec<(i32, Option<Vec<u8>>)>,
+}
+
+impl ClientsidePlayerChat {
+  pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+    let global_index = i32::read_varint(buffer)?;
+    let sender_uuid = Uuid::read_buf(buffer)?;
+    let index = i32::read_varint(buffer)?;
+
+    let message_signature = if bool::read_buf(buffer)? {
+      let mut sig = vec![0u8; 256];
+      buffer.read_exact(&mut sig).ok()?;
+      Some(sig)
+    } else {
+      None
+    };
+
+    let message = String::read_buf(buffer)?;
+    let timestamp = i64::read_buf(buffer)?;
+    let salt = i64::read_buf(buffer)?;
+
+    let previous_message_count = i32::read_varint(buffer)? as usize;
+    let mut previous_messages = Vec::with_capacity(previous_message_count);
+    for _ in 0..previous_message_count {
+      let msg_id = i32::read_varint(buffer)?;
+      let sig = if bool::read_buf(buffer)? {
+        let mut s = vec![0u8; 256];
+        buffer.read_exact(&mut s).ok()?;
+        Some(s)
+      } else {
+        None
+      };
+      previous_messages.push((msg_id, sig));
+    }
+
+    Some(Self {
+      global_index,
+      sender_uuid,
+      index,
+      message_signature,
+      message,
+      timestamp,
+      salt,
+      previous_messages,
+    })
+  }
+
+  pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
+    self.global_index.write_varint(buffer)?;
+    self.sender_uuid.write_buf(buffer)?;
+    self.index.write_varint(buffer)?;
+
+    if let Some(sig) = &self.message_signature {
+      true.write_buf(buffer)?;
+      buffer.write_all(sig)?;
+    } else {
+      false.write_buf(buffer)?;
+    }
+
+    self.message.write_buf(buffer)?;
+    self.timestamp.write_buf(buffer)?;
+    self.salt.write_buf(buffer)?;
+
+    (self.previous_messages.len() as i32).write_varint(buffer)?;
+    for (msg_id, sig) in &self.previous_messages {
+      msg_id.write_varint(buffer)?;
+      if let Some(s) = sig {
+        true.write_buf(buffer)?;
+        buffer.write_all(s)?;
+      } else {
+        false.write_buf(buffer)?;
+      }
+    }
+
+    Ok(())
+  }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct ServersidePong {
   pub id: i32,
 }
@@ -751,6 +851,24 @@ impl ServersideMovePlayerStatusOnly {
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.flags.write_buf(buffer)?;
+    Ok(())
+  }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ServersideClientCommand {
+  pub command: ClientCommand,
+}
+
+impl ServersideClientCommand {
+  pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+    Some(Self {
+      command: ClientCommand::read_buf(buffer)?,
+    })
+  }
+
+  pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
+    self.command.write_buf(buffer)?;
     Ok(())
   }
 }

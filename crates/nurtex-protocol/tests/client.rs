@@ -134,7 +134,7 @@ mod tests {
               .await?;
 
             // conn
-            //  .write_play_packet(ServersidePlayPacket::SwingArm(ServersideSwingArm { hand: RelativeHand::MainHand }))
+            //  .write_play_packet(ServersidePlayPacket::ClientCommand(ServersideClientCommand { command: ClientCommand::PerformRespawn }))
             //  .await?;
           }
           ClientsidePlayPacket::Ping(p) => {
@@ -142,9 +142,15 @@ mod tests {
               .write_play_packet(ServersidePlayPacket::Pong(nurtex_protocol::packets::play::ServersidePong { id: p.id }))
               .await?;
           }
+          ClientsidePlayPacket::Disconnect(_p) => {
+            println!("Клиент был отключен");
+            break;
+          }
           _ => {}
         }
       }
     }
+
+    Ok(())
   }
 }
