@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use crate::{Buffer, VarInt, read_bytes, read_str, write_str};
+use crate::{Buffer, VarInt, read_str, write_str};
 
 use byteorder::{BE, ReadBytesExt, WriteBytesExt};
 
@@ -128,7 +128,7 @@ impl Buffer for f64 {
 
 impl<K: Buffer + Eq + Hash, V: Buffer> Buffer for HashMap<K, V> {
   fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let length = VarInt::read_buf(buffer)?.value() as usize;
+    let length = i32::read_varint(buffer)? as usize;
     let mut contents = HashMap::with_capacity(usize::min(length, 65536));
 
     for _ in 0..length {
@@ -139,7 +139,7 @@ impl<K: Buffer + Eq + Hash, V: Buffer> Buffer for HashMap<K, V> {
   }
 
   fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.len() as i32).write_buf(buffer)?;
+    (self.len() as i32).write_varint(buffer)?;
 
     for (key, value) in self {
       key.write_buf(buffer)?;
@@ -152,19 +152,19 @@ impl<K: Buffer + Eq + Hash, V: Buffer> Buffer for HashMap<K, V> {
 
 impl Buffer for Vec<u8> {
   fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let length = VarInt::read_buf(buffer)?.value() as usize;
-    read_bytes(buffer, length).map(|b| b.to_vec())
+    let length = i32::read_varint(buffer)? as usize;
+    crate::read_bytes(buffer, length).map(|b| b.to_vec())
   }
 
   fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.len() as i32).write_buf(buffer)?;
+    (self.len() as i32).write_varint(buffer)?;
     buffer.write_all(self)
   }
 }
 
 impl<T: Buffer> Buffer for Box<[T]> {
   fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let length = VarInt::read_buf(buffer)?.value() as usize;
+    let length = i32::read_varint(buffer)? as usize;
     let mut contents = Vec::with_capacity(usize::min(length, 65536));
 
     for _ in 0..length {
@@ -175,7 +175,7 @@ impl<T: Buffer> Buffer for Box<[T]> {
   }
 
   fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.len() as i32).write_buf(buffer)?;
+    (self.len() as i32).write_varint(buffer)?;
 
     for item in self.iter() {
       T::write_buf(item, buffer)?;

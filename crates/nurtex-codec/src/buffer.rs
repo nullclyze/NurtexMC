@@ -36,7 +36,7 @@ pub fn read_bytes<'a>(buffer: &'a mut Cursor<&[u8]>, length: usize) -> Option<&'
 pub fn read_str<'a>(buffer: &'a mut Cursor<&[u8]>) -> Option<&'a str> {
   use crate::VarInt;
 
-  let length = VarInt::read_buf(buffer)?.value() as u32;
+  let length = i32::read_varint(buffer)? as u32;
 
   if length > 32767 * 4 {
     return None;
@@ -62,7 +62,7 @@ pub fn write_str(buffer: &mut impl Write, string: &str) -> io::Result<()> {
     return Err(Error::new(ErrorKind::InvalidData, ""));
   }
 
-  VarInt::new(str_len as i32).write_buf(buffer)?;
+  (str_len as i32).write_varint(buffer)?;
   buffer.write_all(string.as_bytes())?;
 
   Ok(())

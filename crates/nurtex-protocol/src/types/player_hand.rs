@@ -12,7 +12,7 @@ pub enum AccurateHand {
 impl AccurateHand {
   /// Метод чтения `AccurateHand` из буффера
   pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let id = VarInt::read_buf(buffer)?.value();
+    let id = i32::read_varint(buffer)?;
 
     match id {
       0 => Some(Self::Left),
@@ -28,7 +28,7 @@ impl AccurateHand {
       Self::Right => 1,
     };
 
-    VarInt::new(id).write_buf(buffer)?;
+    id.write_varint(buffer)?;
 
     Ok(())
   }
@@ -44,7 +44,7 @@ pub enum RelativeHand {
 impl RelativeHand {
   /// Метод чтения `RelativeHand` из буффера
   pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let id = VarInt::read_buf(buffer)?.value();
+    let id = i32::read_varint(buffer)?;
 
     match id {
       0 => Some(Self::MainHand),
@@ -60,7 +60,7 @@ impl RelativeHand {
       Self::OffHand => 1,
     };
 
-    VarInt::new(id).write_buf(buffer)?;
+    id.write_varint(buffer)?;
 
     Ok(())
   }

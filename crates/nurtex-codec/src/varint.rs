@@ -2,27 +2,16 @@ use crate::{CONTINUE_BIT, SEGMENT_BITS, read_byte};
 use std::io::{self, Cursor, Write};
 
 /// Обёртка для типа `VarInt`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct VarInt(i32);
-
-impl VarInt {
-  /// Метод создания нового экземпляра `VarInt`
-  pub fn new(value: i32) -> Self {
-    Self(value)
-  }
-
-  /// Метод создания экземпляра `VarInt` из определённого числа
-  pub fn from(value: impl Into<i32>) -> Self {
-    Self(value.into())
-  }
-
-  /// Метод получения значения
-  pub fn value(&self) -> i32 {
-    self.0
-  }
-
+pub trait VarInt {
   /// Метод чтения `VarInt` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+  fn read_varint(buffer: &mut Cursor<&[u8]>) -> Option<i32>;
+  
+  /// Метод записи `VarInt` в буффер
+  fn write_varint(&self, buffer: &mut impl Write) -> io::Result<()>;
+}
+
+impl VarInt for i32 {
+  fn read_varint(buffer: &mut Cursor<&[u8]>) -> Option<i32> {
     let mut value = 0i32;
     let mut position = 0u32;
 
@@ -41,13 +30,12 @@ impl VarInt {
       }
     }
 
-    Some(Self(value))
+    Some(value)
   }
 
-  /// Метод записи `VarInt` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_varint(&self, buffer: &mut impl Write) -> io::Result<()> {
     let mut array = [0];
-    let mut value = self.0;
+    let mut value = *self;
 
     if value == 0 {
       buffer.write_all(&array)?;

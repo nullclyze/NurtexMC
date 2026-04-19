@@ -13,7 +13,7 @@ use crate::Packet;
 fn parse_frame(buffer: &mut Cursor<Vec<u8>>) -> Option<Box<[u8]>> {
   let mut buffer_copy = Cursor::new(&buffer.get_ref()[buffer.position() as usize..]);
 
-  let length = VarInt::read_buf(&mut buffer_copy)?.value() as usize;
+  let length = i32::read_varint(&mut buffer_copy)? as usize;
 
   if length > buffer_copy.remaining() {
     return None;
@@ -34,12 +34,12 @@ fn parse_frame(buffer: &mut Cursor<Vec<u8>>) -> Option<Box<[u8]>> {
 }
 
 pub fn deserialize_packet<P: Packet + Debug>(stream: &mut Cursor<&[u8]>) -> Option<P> {
-  let packet_id = VarInt::read_buf(stream)?.value() as u32;
+  let packet_id = i32::read_varint(stream)? as u32;
   P::read(packet_id, stream)
 }
 
 pub fn compression_decoder(stream: &mut Cursor<&[u8]>, compression_threshold: u32) -> Option<Box<[u8]>> {
-  let n = VarInt::read_buf(stream)?.value() as u32;
+  let n = i32::read_varint(stream)? as u32;
 
   if n == 0 {
     let buf = stream.get_ref()[stream.position() as usize..].to_vec().into_boxed_slice();

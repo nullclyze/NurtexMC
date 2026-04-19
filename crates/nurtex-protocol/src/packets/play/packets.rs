@@ -90,20 +90,20 @@ impl ClientsideLogin {
       entity_id: i32::read_buf(buffer)?,
       is_hardcore: bool::read_buf(buffer)?,
       dimension_names: {
-        let count = VarInt::read_buf(buffer)?.value() as usize;
+        let count = i32::read_varint(buffer)? as usize;
         let mut names = Vec::with_capacity(count);
         for _ in 0..count {
           names.push(String::read_buf(buffer)?);
         }
         names
       },
-      max_players: VarInt::read_buf(buffer)?.value(),
-      view_distance: VarInt::read_buf(buffer)?.value(),
-      simulation_distance: VarInt::read_buf(buffer)?.value(),
+      max_players: i32::read_varint(buffer)?,
+      view_distance: i32::read_varint(buffer)?,
+      simulation_distance: i32::read_varint(buffer)?,
       reduced_debug_info: bool::read_buf(buffer)?,
       enable_respawn_screen: bool::read_buf(buffer)?,
       do_limited_crafting: bool::read_buf(buffer)?,
-      dimension_type: VarInt::read_buf(buffer)?.value(),
+      dimension_type: i32::read_varint(buffer)?,
       dimension_name: String::read_buf(buffer)?,
       hashed_seed: i64::read_buf(buffer)?,
       game_mode: u8::read_buf(buffer)?,
@@ -125,8 +125,8 @@ impl ClientsideLogin {
           None
         }
       },
-      portal_cooldown: VarInt::read_buf(buffer)?.value(),
-      sea_level: VarInt::read_buf(buffer)?.value(),
+      portal_cooldown: i32::read_varint(buffer)?,
+      sea_level: i32::read_varint(buffer)?,
       enforces_secure_chat: bool::read_buf(buffer)?,
     })
   }
@@ -135,18 +135,18 @@ impl ClientsideLogin {
     self.entity_id.write_buf(buffer)?;
     self.is_hardcore.write_buf(buffer)?;
     
-    VarInt::new(self.dimension_names.len() as i32).write_buf(buffer)?;
+    (self.dimension_names.len() as i32).write_varint(buffer)?;
     for name in &self.dimension_names {
       name.write_buf(buffer)?;
     }
     
-    VarInt::new(self.max_players).write_buf(buffer)?;
-    VarInt::new(self.view_distance).write_buf(buffer)?;
-    VarInt::new(self.simulation_distance).write_buf(buffer)?;
+    self.max_players.write_varint(buffer)?;
+    self.view_distance.write_varint(buffer)?;
+    self.simulation_distance.write_varint(buffer)?;
     self.reduced_debug_info.write_buf(buffer)?;
     self.enable_respawn_screen.write_buf(buffer)?;
     self.do_limited_crafting.write_buf(buffer)?;
-    VarInt::new(self.dimension_type).write_buf(buffer)?;
+    self.dimension_type.write_varint(buffer)?;
     
     self.dimension_name.write_buf(buffer)?;
     
@@ -171,8 +171,8 @@ impl ClientsideLogin {
       false.write_buf(buffer)?;
     }
     
-    VarInt::new(self.portal_cooldown).write_buf(buffer)?;
-    VarInt::new(self.sea_level).write_buf(buffer)?;
+    self.portal_cooldown.write_varint(buffer)?;
+    self.sea_level.write_varint(buffer)?;
     self.enforces_secure_chat.write_buf(buffer)?;
     Ok(())
   }
@@ -190,19 +190,19 @@ pub struct ClientsideDamageEvent {
 impl ClientsideDamageEvent {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
-      entity_id: VarInt::read_buf(buffer)?.value(),
-      source_type_id: VarInt::read_buf(buffer)?.value(),
-      source_cause_id: VarInt::read_buf(buffer)?.value(),
-      source_direct_id: VarInt::read_buf(buffer)?.value(),
+      entity_id: i32::read_varint(buffer)?,
+      source_type_id: i32::read_varint(buffer)?,
+      source_cause_id: i32::read_varint(buffer)?,
+      source_direct_id: i32::read_varint(buffer)?,
       source_position: Position::read_buf(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.entity_id).write_buf(buffer)?;
-    VarInt::new(self.source_type_id).write_buf(buffer)?;
-    VarInt::new(self.source_cause_id).write_buf(buffer)?;
-    VarInt::new(self.source_direct_id).write_buf(buffer)?;
+    self.entity_id.write_varint(buffer)?;
+    self.source_type_id.write_varint(buffer)?;
+    self.source_cause_id.write_varint(buffer)?;
+    self.source_direct_id.write_varint(buffer)?;
     self.source_position.write_buf(buffer)?;
     Ok(())
   }
@@ -220,7 +220,7 @@ pub struct ClientsideUpdateEntityPos {
 impl ClientsideUpdateEntityPos {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
-      entity_id: VarInt::read_buf(buffer)?.value(),
+      entity_id: i32::read_varint(buffer)?,
       delta_x: i16::read_buf(buffer)?,
       delta_y: i16::read_buf(buffer)?,
       delta_z: i16::read_buf(buffer)?,
@@ -229,7 +229,7 @@ impl ClientsideUpdateEntityPos {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.entity_id).write_buf(buffer)?;
+    self.entity_id.write_varint(buffer)?;
     self.delta_x.write_buf(buffer)?;
     self.delta_y.write_buf(buffer)?;
     self.delta_z.write_buf(buffer)?;
@@ -250,7 +250,7 @@ pub struct ClientsidePlayerPosition {
 impl ClientsidePlayerPosition {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
-      teleport_id: VarLong::read_buf(buffer)?.value(),
+      teleport_id: i64::read_varlong(buffer)?,
       position: Position::read_buf(buffer)?,
       velocity: Velocity::read_buf(buffer)?,
       rotation: Rotation::read_buf(buffer)?,
@@ -259,7 +259,7 @@ impl ClientsidePlayerPosition {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarLong::new(self.teleport_id).write_buf(buffer)?;
+    self.teleport_id.write_varlong(buffer)?;
     self.position.write_buf(buffer)?;
     self.velocity.write_buf(buffer)?;
     self.rotation.write_buf(buffer)?;
@@ -300,12 +300,12 @@ pub struct ClientsidePlayerCombatKill {
 impl ClientsidePlayerCombatKill {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
-      player_id: VarInt::read_buf(buffer)?.value(),
+      player_id: i32::read_varint(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.player_id).write_buf(buffer)?;
+    self.player_id.write_varint(buffer)?;
     Ok(())
   }
 }
@@ -321,14 +321,14 @@ impl ClientsideSetHealth {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
       health: f32::read_buf(buffer)?,
-      food: VarInt::read_buf(buffer)?.value(),
+      food: i32::read_varint(buffer)?,
       food_saturation: f32::read_buf(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.health.write_buf(buffer)?;
-    VarInt::new(self.food).write_buf(buffer)?;
+    self.food.write_varint(buffer)?;
     self.food_saturation.write_buf(buffer)?;
     Ok(())
   }
@@ -345,15 +345,15 @@ impl ClientsideSetExperience {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
       experience_bar: f32::read_buf(buffer)?,
-      level: VarInt::read_buf(buffer)?.value(),
-      total_experience: VarInt::read_buf(buffer)?.value(),
+      level: i32::read_varint(buffer)?,
+      total_experience: i32::read_varint(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.experience_bar.write_buf(buffer)?;
-    VarInt::new(self.level).write_buf(buffer)?;
-    VarInt::new(self.total_experience).write_buf(buffer)?;
+    self.level.write_varint(buffer)?;
+    self.total_experience.write_varint(buffer)?;
     Ok(())
   }
 }
@@ -400,12 +400,12 @@ pub struct ServersideAcceptTeleportation {
 impl ServersideAcceptTeleportation {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
-      teleport_id: VarLong::read_buf(buffer)?.value(),
+      teleport_id: i64::read_varlong(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarLong::new(self.teleport_id).write_buf(buffer)?;
+    self.teleport_id.write_varlong(buffer)?;
     Ok(())
   }
 }
@@ -439,14 +439,14 @@ impl ServersideUseItem {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
       hand: RelativeHand::read_buf(buffer)?,
-      sequence: VarInt::read_buf(buffer)?.value(),
+      sequence: i32::read_varint(buffer)?,
       rotation: Rotation::read_buf(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.hand.write_buf(buffer)?;
-    VarInt::new(self.sequence).write_buf(buffer)?;
+    self.sequence.write_varint(buffer)?;
     self.hand.write_buf(buffer)?;
     Ok(())
   }

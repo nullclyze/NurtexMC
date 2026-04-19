@@ -237,7 +237,7 @@ pub struct ClientsideStoreCookie {
 impl ClientsideStoreCookie {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let key = String::read_buf(buffer)?;
-    let len = VarInt::read_buf(buffer)?.value() as usize;
+    let len = i32::read_varint(buffer)? as usize;
     let mut payload = vec![0u8; len];
 
     for byte in &mut payload {
@@ -249,7 +249,7 @@ impl ClientsideStoreCookie {
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.key.write_buf(buffer)?;
-    VarInt::new(self.payload.len() as i32).write_buf(buffer)?;
+    (self.payload.len() as i32).write_varint(buffer)?;
 
     for byte in &self.payload {
       byte.write_buf(buffer)?;
@@ -269,13 +269,13 @@ impl ClientsideTransfer {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
       server_host: String::read_buf(buffer)?,
-      server_port: VarInt::read_buf(buffer)?.value(),
+      server_port: i32::read_varint(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.server_host.write_buf(buffer)?;
-    VarInt::new(self.server_port).write_buf(buffer)?;
+    self.server_port.write_varint(buffer)?;
 
     Ok(())
   }
@@ -288,7 +288,7 @@ pub struct ClientsideFeatureFlags {
 
 impl ClientsideFeatureFlags {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let count = VarInt::read_buf(buffer)?.value() as usize;
+    let count = i32::read_varint(buffer)? as usize;
     let mut features = Vec::with_capacity(count);
 
     for _ in 0..count {
@@ -299,7 +299,7 @@ impl ClientsideFeatureFlags {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.features.len() as i32).write_buf(buffer)?;
+    (self.features.len() as i32).write_varint(buffer)?;
 
     for feature in &self.features {
       feature.write_buf(buffer)?;
@@ -328,21 +328,21 @@ pub struct Tag {
 
 impl ClientsideUpdateTags {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let groups_count = VarInt::read_buf(buffer)?.value() as usize;
+    let groups_count = i32::read_varint(buffer)? as usize;
     let mut tags = Vec::with_capacity(groups_count);
 
     for _ in 0..groups_count {
       let tag_type = String::read_buf(buffer)?;
-      let tags_count = VarInt::read_buf(buffer)?.value() as usize;
+      let tags_count = i32::read_varint(buffer)? as usize;
       let mut group_tags = Vec::with_capacity(tags_count);
 
       for _ in 0..tags_count {
         let name = String::read_buf(buffer)?;
-        let entries_count = VarInt::read_buf(buffer)?.value() as usize;
+        let entries_count = i32::read_varint(buffer)? as usize;
         let mut entries = Vec::with_capacity(entries_count);
 
         for _ in 0..entries_count {
-          entries.push(VarInt::read_buf(buffer)?.value());
+          entries.push(i32::read_varint(buffer)?);
         }
 
         group_tags.push(Tag { name, entries });
@@ -355,18 +355,18 @@ impl ClientsideUpdateTags {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.tags.len() as i32).write_buf(buffer)?;
+    (self.tags.len() as i32).write_varint(buffer)?;
 
     for group in &self.tags {
       group.tag_type.write_buf(buffer)?;
-      VarInt::new(group.tags.len() as i32).write_buf(buffer)?;
+      (group.tags.len() as i32).write_varint(buffer)?;
 
       for tag in &group.tags {
         tag.name.write_buf(buffer)?;
-        VarInt::new(tag.entries.len() as i32).write_buf(buffer)?;
+        (tag.entries.len() as i32).write_varint(buffer)?;
 
         for entry in &tag.entries {
-          VarInt::new(*entry).write_buf(buffer)?;
+          entry.write_varint(buffer)?;
         }
       }
     }
@@ -389,7 +389,7 @@ pub struct KnownPack {
 
 impl ClientsideKnownPacks {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let count = VarInt::read_buf(buffer)?.value() as usize;
+    let count = i32::read_varint(buffer)? as usize;
     let mut known_packs = Vec::with_capacity(count);
 
     for _ in 0..count {
@@ -404,7 +404,7 @@ impl ClientsideKnownPacks {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.known_packs.len() as i32).write_buf(buffer)?;
+    (self.known_packs.len() as i32).write_varint(buffer)?;
 
     for pack in &self.known_packs {
       pack.namespace.write_buf(buffer)?;
@@ -429,7 +429,7 @@ pub struct ReportDetail {
 
 impl ClientsideCustomReportDetails {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let count = VarInt::read_buf(buffer)?.value() as usize;
+    let count = i32::read_varint(buffer)? as usize;
     let mut details = Vec::with_capacity(count);
 
     for _ in 0..count {
@@ -443,7 +443,7 @@ impl ClientsideCustomReportDetails {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.details.len() as i32).write_buf(buffer)?;
+    (self.details.len() as i32).write_varint(buffer)?;
 
     for detail in &self.details {
       detail.title.write_buf(buffer)?;
@@ -473,14 +473,14 @@ pub enum ServerLinkLabel {
 
 impl ClientsideServerLinks {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let count = VarInt::read_buf(buffer)?.value() as usize;
+    let count = i32::read_varint(buffer)? as usize;
     let mut links = Vec::with_capacity(count);
 
     for _ in 0..count {
       let is_built_in = bool::read_buf(buffer)?;
 
       let label = if is_built_in {
-        ServerLinkLabel::BuiltIn(VarInt::read_buf(buffer)?.value())
+        ServerLinkLabel::BuiltIn(i32::read_varint(buffer)?)
       } else {
         ServerLinkLabel::Custom(String::read_buf(buffer)?)
       };
@@ -494,13 +494,13 @@ impl ClientsideServerLinks {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.links.len() as i32).write_buf(buffer)?;
+    (self.links.len() as i32).write_varint(buffer)?;
 
     for link in &self.links {
       match &link.label {
         ServerLinkLabel::BuiltIn(id) => {
           true.write_buf(buffer)?;
-          VarInt::new(*id).write_buf(buffer)?;
+          id.write_varint(buffer)?;
         }
         ServerLinkLabel::Custom(text) => {
           false.write_buf(buffer)?;
@@ -533,26 +533,26 @@ impl ServersideClientInformation {
     Some(Self {
       locale: String::read_buf(buffer)?,
       view_distance: i8::read_buf(buffer)?,
-      chat_mode: VarInt::read_buf(buffer)?.value(),
+      chat_mode: i32::read_varint(buffer)?,
       chat_colors: bool::read_buf(buffer)?,
       displayed_skin_parts: DisplayedSkinParts::from_mask(u8::read_buf(buffer)?),
       main_hand: AccurateHand::read_buf(buffer)?,
       enable_text_filtering: bool::read_buf(buffer)?,
       allow_server_listings: bool::read_buf(buffer)?,
-      particle_status: VarInt::read_buf(buffer)?.value(),
+      particle_status: i32::read_varint(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.locale.write_buf(buffer)?;
     self.view_distance.write_buf(buffer)?;
-    VarInt::new(self.chat_mode).write_buf(buffer)?;
+    self.chat_mode.write_varint(buffer)?;
     self.chat_colors.write_buf(buffer)?;
     u8::write_buf(&self.displayed_skin_parts.to_mask(), buffer)?;
     self.main_hand.write_buf(buffer)?;
     self.enable_text_filtering.write_buf(buffer)?;
     self.allow_server_listings.write_buf(buffer)?;
-    VarInt::new(self.particle_status).write_buf(buffer)?;
+    self.particle_status.write_varint(buffer)?;
     Ok(())
   }
 }
@@ -569,7 +569,7 @@ impl ServersideCookieResponse {
     let has_payload = bool::read_buf(buffer)?;
 
     let payload = if has_payload {
-      let len = VarInt::read_buf(buffer)?.value() as usize;
+      let len = i32::read_varint(buffer)? as usize;
       let mut bytes = vec![0u8; len];
 
       for byte in &mut bytes {
@@ -589,7 +589,7 @@ impl ServersideCookieResponse {
     self.payload.is_some().write_buf(buffer)?;
 
     if let Some(payload) = &self.payload {
-      VarInt::new(payload.len() as i32).write_buf(buffer)?;
+      (payload.len() as i32).write_varint(buffer)?;
 
       for byte in payload {
         byte.write_buf(buffer)?;
@@ -695,14 +695,14 @@ impl From<i32> for ResourcePackState {
 impl ServersideResourcePackResponse {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let uuid = Uuid::read_buf(buffer)?;
-    let state_id = VarInt::read_buf(buffer)?.value();
+    let state_id = i32::read_varint(buffer)?;
 
     Some(Self { uuid, state: state_id.into() })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.uuid.write_buf(buffer)?;
-    VarInt::new(self.state as i32).write_buf(buffer)?;
+    (self.state as i32).write_varint(buffer)?;
 
     Ok(())
   }
@@ -715,7 +715,7 @@ pub struct ServersideKnownPacks {
 
 impl ServersideKnownPacks {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let count = VarInt::read_buf(buffer)?.value() as usize;
+    let count = i32::read_varint(buffer)? as usize;
     let mut known_packs = Vec::with_capacity(count);
 
     for _ in 0..count {
@@ -730,7 +730,7 @@ impl ServersideKnownPacks {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.known_packs.len() as i32).write_buf(buffer)?;
+    (self.known_packs.len() as i32).write_varint(buffer)?;
 
     for pack in &self.known_packs {
       pack.namespace.write_buf(buffer)?;

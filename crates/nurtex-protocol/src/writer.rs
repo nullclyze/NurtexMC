@@ -22,7 +22,7 @@ where
   P: Packet + Debug,
 {
   let mut buf = Vec::new();
-  VarInt::new(packet.id() as i32).write_buf(&mut buf).ok()?;
+  (packet.id() as i32).write_varint(&mut buf).ok()?;
   packet.write(&mut buf).ok()?;
 
   if buf.len() > 8388608 as usize {
@@ -58,7 +58,7 @@ pub fn compression_encoder(data: &[u8], compression_threshold: u32) -> Option<Ve
   if n < compression_threshold as usize {
     let mut buf = Vec::new();
 
-    VarInt::new(0).write_buf(&mut buf).ok()?;
+    0i32.write_varint(&mut buf).ok()?;
     io::Write::write_all(&mut buf, data).ok()?;
 
     Some(buf)
@@ -68,7 +68,7 @@ pub fn compression_encoder(data: &[u8], compression_threshold: u32) -> Option<Ve
     deflater.read_to_end(&mut compressed_data).ok()?;
 
     let mut len_prepended_compressed_data = Vec::new();
-    VarInt::new(data.len() as i32).write_buf(&mut len_prepended_compressed_data).ok()?;
+    (data.len() as i32).write_varint(&mut len_prepended_compressed_data).ok()?;
     len_prepended_compressed_data.append(&mut compressed_data);
 
     Some(len_prepended_compressed_data)
@@ -78,7 +78,7 @@ pub fn compression_encoder(data: &[u8], compression_threshold: u32) -> Option<Ve
 fn frame_prepender(mut data: Vec<u8>) -> Option<Vec<u8>> {
   let mut buf = Vec::new();
 
-  VarInt::new(data.len() as i32).write_buf(&mut buf).ok()?;
+  (data.len() as i32).write_varint(&mut buf).ok()?;
   buf.append(&mut data);
 
   Some(buf)

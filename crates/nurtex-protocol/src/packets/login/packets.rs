@@ -32,14 +32,14 @@ pub struct ClientsideEncryptionRequest {
 impl ClientsideEncryptionRequest {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let server_id = String::read_buf(buffer)?;
-    let public_key_len = VarInt::read_buf(buffer)?.value() as usize;
+    let public_key_len = i32::read_varint(buffer)? as usize;
     let mut public_key = vec![0u8; public_key_len];
 
     for byte in &mut public_key {
       *byte = u8::read_buf(buffer)?;
     }
 
-    let verify_token_len = VarInt::read_buf(buffer)?.value() as usize;
+    let verify_token_len = i32::read_varint(buffer)? as usize;
     let mut verify_token = vec![0u8; verify_token_len];
 
     for byte in &mut verify_token {
@@ -58,13 +58,13 @@ impl ClientsideEncryptionRequest {
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.server_id.write_buf(buffer)?;
-    VarInt::new(self.public_key.len() as i32).write_buf(buffer)?;
+    (self.public_key.len() as i32).write_varint(buffer)?;
 
     for byte in &self.public_key {
       byte.write_buf(buffer)?;
     }
 
-    VarInt::new(self.verify_token.len() as i32).write_buf(buffer)?;
+    (self.verify_token.len() as i32).write_varint(buffer)?;
 
     for byte in &self.verify_token {
       byte.write_buf(buffer)?;
@@ -93,7 +93,7 @@ impl ClientsideLoginSuccess {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let uuid = Uuid::read_buf(buffer)?;
     let username = String::read_buf(buffer)?;
-    let properties_len = VarInt::read_buf(buffer)?.value() as usize;
+    let properties_len = i32::read_varint(buffer)? as usize;
     let mut properties = Vec::with_capacity(properties_len);
 
     for _ in 0..properties_len {
@@ -112,7 +112,7 @@ impl ClientsideLoginSuccess {
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.uuid.write_buf(buffer)?;
     self.username.write_buf(buffer)?;
-    VarInt::new(self.properties.len() as i32).write_buf(buffer)?;
+    (self.properties.len() as i32).write_varint(buffer)?;
 
     for prop in &self.properties {
       prop.name.write_buf(buffer)?;
@@ -136,12 +136,12 @@ pub struct ClientsideSetCompression {
 impl ClientsideSetCompression {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
-      compression_threshold: VarInt::read_buf(buffer)?.value(),
+      compression_threshold: i32::read_varint(buffer)?,
     })
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.compression_threshold).write_buf(buffer)
+    self.compression_threshold.write_varint(buffer)
   }
 }
 
@@ -154,7 +154,7 @@ pub struct ClientsidePluginRequest {
 
 impl ClientsidePluginRequest {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let message_id = VarInt::read_buf(buffer)?.value();
+    let message_id = i32::read_varint(buffer)?;
     let channel = String::read_buf(buffer)?;
 
     let mut data = Vec::new();
@@ -167,7 +167,7 @@ impl ClientsidePluginRequest {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.message_id).write_buf(buffer)?;
+    self.message_id.write_varint(buffer)?;
     self.channel.write_buf(buffer)?;
 
     for byte in &self.data {
@@ -223,14 +223,14 @@ pub struct ServersideEncryptionResponse {
 
 impl ServersideEncryptionResponse {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let shared_secret_len = VarInt::read_buf(buffer)?.value() as usize;
+    let shared_secret_len = i32::read_varint(buffer)? as usize;
     let mut shared_secret = vec![0u8; shared_secret_len];
 
     for byte in &mut shared_secret {
       *byte = u8::read_buf(buffer)?;
     }
 
-    let verify_token_len = VarInt::read_buf(buffer)?.value() as usize;
+    let verify_token_len = i32::read_varint(buffer)? as usize;
     let mut verify_token = vec![0u8; verify_token_len];
 
     for byte in &mut verify_token {
@@ -241,13 +241,13 @@ impl ServersideEncryptionResponse {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.shared_secret.len() as i32).write_buf(buffer)?;
+    (self.shared_secret.len() as i32).write_varint(buffer)?;
 
     for byte in &self.shared_secret {
       byte.write_buf(buffer)?;
     }
 
-    VarInt::new(self.verify_token.len() as i32).write_buf(buffer)?;
+    (self.verify_token.len() as i32).write_varint(buffer)?;
 
     for byte in &self.verify_token {
       byte.write_buf(buffer)?;
@@ -265,7 +265,7 @@ pub struct ServersidePluginResponse {
 
 impl ServersidePluginResponse {
   pub fn read(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
-    let message_id = VarInt::read_buf(buffer)?.value();
+    let message_id = i32::read_varint(buffer)?;
     let has_data = bool::read_buf(buffer)?;
 
     let data = if has_data {
@@ -284,7 +284,7 @@ impl ServersidePluginResponse {
   }
 
   pub fn write(&self, buffer: &mut impl Write) -> io::Result<()> {
-    VarInt::new(self.message_id).write_buf(buffer)?;
+    self.message_id.write_varint(buffer)?;
     self.data.is_some().write_buf(buffer)?;
 
     if let Some(data) = &self.data {
@@ -322,7 +322,7 @@ impl ServersideCookieResponse {
     let has_payload = bool::read_buf(buffer)?;
 
     let payload = if has_payload {
-      let len = VarInt::read_buf(buffer)?.value() as usize;
+      let len = i32::read_varint(buffer)? as usize;
       let mut bytes = vec![0u8; len];
 
       for byte in &mut bytes {
@@ -342,7 +342,7 @@ impl ServersideCookieResponse {
     self.payload.is_some().write_buf(buffer)?;
 
     if let Some(payload) = &self.payload {
-      VarInt::new(payload.len() as i32).write_buf(buffer)?;
+      (payload.len() as i32).write_varint(buffer)?;
 
       for byte in payload {
         byte.write_buf(buffer)?;
