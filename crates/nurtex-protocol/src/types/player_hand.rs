@@ -1,6 +1,6 @@
 use std::io::{self, Cursor, Write};
 
-use nurtex_codec::VarInt;
+use nurtex_codec::{Buffer, VarInt};
 
 /// Точная рука игрока (левая / правая)
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -9,9 +9,8 @@ pub enum AccurateHand {
   Right,
 }
 
-impl AccurateHand {
-  /// Метод чтения `AccurateHand` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+impl Buffer for AccurateHand {
+  fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let id = i32::read_varint(buffer)?;
 
     match id {
@@ -21,8 +20,7 @@ impl AccurateHand {
     }
   }
 
-  /// Метод записи `AccurateHand` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     let id = match self {
       Self::Left => 0,
       Self::Right => 1,
@@ -41,9 +39,8 @@ pub enum RelativeHand {
   OffHand,
 }
 
-impl RelativeHand {
-  /// Метод чтения `RelativeHand` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+impl Buffer for RelativeHand {
+  fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let id = i32::read_varint(buffer)?;
 
     match id {
@@ -53,8 +50,7 @@ impl RelativeHand {
     }
   }
 
-  /// Метод записи `RelativeHand` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     let id = match self {
       Self::MainHand => 0,
       Self::OffHand => 1,

@@ -25,3 +25,4 @@ hashbrown.workspace = true
 once_cell.workspace = true
 nurtex-codec.workspace = true
 nurtex-encrypt.workspace = true
+nurtex-derive.workspace = true

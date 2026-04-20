@@ -533,6 +533,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nurtex-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "nurtex-encrypt"
 version = "0.1.0"
 dependencies = [
@@ -552,6 +561,7 @@ dependencies = [
  "futures",
  "hashbrown",
  "nurtex-codec",
+ "nurtex-derive",
  "nurtex-encrypt",
  "once_cell",
  "tokio",

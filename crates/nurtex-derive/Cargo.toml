@@ -1,0 +1,22 @@
+[package]
+name = "nurtex-derive"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Library containing auxiliary procedural macros for serializing packet types."
+repository = "https://github.com/NurtexMC/nurtex"
+homepage = "https://github.com/NurtexMC/nurtex"
+documentation = "https://docs.rs/nurtex-derive/latest/"
+readme = "README.md"
+keywords = ["minecraft", "derive", "macro"]
+categories = ["games"]
+
+[lib]
+name = "nurtex_derive"
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true

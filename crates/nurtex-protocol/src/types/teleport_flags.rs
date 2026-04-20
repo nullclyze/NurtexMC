@@ -16,9 +16,8 @@ pub struct TeleportFlags {
   pub rotate_velocity: bool,
 }
 
-impl TeleportFlags {
-  /// Метод чтения `TeleportFlags` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+impl Buffer for TeleportFlags {
+  fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let flags = i32::read_buf(buffer)?;
     Some(Self {
       relative_x: (flags & 0x0001) != 0,
@@ -33,8 +32,7 @@ impl TeleportFlags {
     })
   }
 
-  /// Метод записи `TeleportFlags` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     let mut flags = 0i32;
     if self.relative_x {
       flags |= 0x0001;

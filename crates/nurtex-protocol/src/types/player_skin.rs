@@ -1,3 +1,5 @@
+use nurtex_codec::Buffer;
+
 /// Отображаемые части скина
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct DisplayedSkinParts {
@@ -65,5 +67,15 @@ impl DisplayedSkinParts {
       right_pants_leg: (mask & 0x20) != 0,
       hat: (mask & 0x40) != 0,
     }
+  }
+}
+
+impl Buffer for DisplayedSkinParts {
+  fn read_buf(buffer: &mut std::io::Cursor<&[u8]>) -> Option<Self> {
+    Some(Self::from_mask(u8::read_buf(buffer)?))
+  }
+
+  fn write_buf(&self, buffer: &mut impl std::io::Write) -> std::io::Result<()> {
+    self.to_mask().write_buf(buffer)
   }
 }

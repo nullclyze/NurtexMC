@@ -27,17 +27,17 @@ impl Rotation {
 
     Self { yaw: dyaw, pitch: dpitch }
   }
+}
 
-  /// Метод чтения `Rotation` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+impl Buffer for Rotation {
+  fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
       yaw: f32::read_buf(buffer)?,
       pitch: f32::read_buf(buffer)?,
     })
   }
 
-  /// Метод записи `Rotation` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.yaw.write_buf(buffer)?;
     self.pitch.write_buf(buffer)?;
     Ok(())

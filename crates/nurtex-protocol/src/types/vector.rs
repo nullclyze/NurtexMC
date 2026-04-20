@@ -29,9 +29,10 @@ impl Vector3 {
 
     Self { x: dx, y: dy, z: dz }
   }
+}
 
-  /// Метод чтения `Vector3` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+impl Buffer for Vector3 {
+  fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     Some(Self {
       x: f64::read_buf(buffer)?,
       y: f64::read_buf(buffer)?,
@@ -39,8 +40,7 @@ impl Vector3 {
     })
   }
 
-  /// Метод записи `Vector3` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     self.x.write_buf(buffer)?;
     self.y.write_buf(buffer)?;
     self.z.write_buf(buffer)?;
@@ -79,9 +79,10 @@ impl LpVector3 {
     let v = (value & 32767) as f64;
     (v.min(Self::MAX_QUANTIZED_VALUE)) * 2.0 / Self::MAX_QUANTIZED_VALUE - 1.0
   }
+}
 
-  /// Метод чтения `LpVector3` из буффера
-  pub fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
+impl Buffer for LpVector3 {
+  fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let byte1 = u8::read_buf(buffer)? as i32;
 
     if byte1 == 0 {
@@ -108,8 +109,7 @@ impl LpVector3 {
     })
   }
 
-  /// Метод записи `LpVector3` в буффер
-  pub fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
+  fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     let max_coordinate = self.x.abs().max(self.y.abs().max(self.z.abs()));
 
     if max_coordinate < 3.051944088384301e-5 {

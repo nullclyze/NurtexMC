@@ -2,6 +2,7 @@
 members = [
   "crates/nurtex-client",
   "crates/nurtex-codec", 
+  "crates/nurtex-derive", 
   "crates/nurtex-encrypt",
   "crates/nurtex-protocol",
 ]
@@ -31,5 +32,6 @@ hashbrown = "0.17.0"
 once_cell = "1.21.4"
 
 nurtex-codec = { path = "crates/nurtex-codec", version = "0.1.0" }
+nurtex-derive = { path = "crates/nurtex-derive", version = "0.1.0" }
 nurtex-encrypt = { path = "crates/nurtex-encrypt", version = "0.1.0" }
 nurtex-protocol = { path = "crates/nurtex-protocol", version = "0.1.0" }

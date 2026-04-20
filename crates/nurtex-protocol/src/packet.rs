@@ -11,6 +11,6 @@ where
 }
 
 /// Трейт для получения образца пакета
-pub trait IntoPacket<P> {
-  fn sample(self) -> P;
+pub trait IntoPacket<T> {
+  fn into_packet(self) -> T;
 }

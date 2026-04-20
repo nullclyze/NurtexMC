@@ -4,13 +4,13 @@ use nurtex_protocol::connection::address::convert_address;
 use nurtex_protocol::connection::utils::handle_encryption_request;
 use nurtex_protocol::connection::{ConnectionState, NurtexConnection};
 use nurtex_protocol::packets::configuration::{
-  ClientsideConfigurationPacket, ResourcePackState, ServersideAcknowledgeFinishConfiguration, ServersideClientInformation, ServersideConfigurationPacket, ServersideKnownPacks,
+  ClientsideConfigurationPacket, ServersideAcknowledgeFinishConfiguration, ServersideClientInformation, ServersideConfigurationPacket, ServersideKnownPacks,
   ServersideResourcePackResponse,
 };
-use nurtex_protocol::packets::handshake::{ClientIntention, ServersideGreet, ServersideHandshakePacket};
+use nurtex_protocol::packets::handshake::{ServersideGreet, ServersideHandshakePacket};
 use nurtex_protocol::packets::login::{ClientsideLoginPacket, ServersideLoginAcknowledged, ServersideLoginPacket, ServersideLoginStart};
 use nurtex_protocol::packets::play::{ClientsidePlayPacket, ServersidePlayPacket};
-use nurtex_protocol::types::{AccurateHand, DisplayedSkinParts};
+use nurtex_protocol::types::{AccurateHand, ClientIntention, DisplayedSkinParts, ResourcePackState};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -25,7 +25,7 @@ async fn main() -> io::Result<()> {
 
   // Отправляем привестствие
   conn
-    .write_handshake_packet(ServersideHandshakePacket::Intention(ServersideGreet {
+    .write_handshake_packet(ServersideHandshakePacket::Greet(ServersideGreet {
       protocol_version: 774, // Версия 1.21.11
       server_host: addr.ip().to_string(),
       server_port: addr.port(),

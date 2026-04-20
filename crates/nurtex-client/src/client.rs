@@ -7,10 +7,11 @@ use nurtex_protocol::connection::address::convert_address;
 use nurtex_protocol::connection::utils::handle_encryption_request;
 use nurtex_protocol::connection::{ClientsidePacket, ConnectionState};
 use nurtex_protocol::packets::configuration::{ClientsideConfigurationPacket, ServersideAcknowledgeFinishConfiguration, ServersideConfigurationPacket, ServersideKnownPacks};
-use nurtex_protocol::packets::configuration::{ResourcePackState, ServersideResourcePackResponse};
-use nurtex_protocol::packets::handshake::{ClientIntention, ServersideGreet, ServersideHandshakePacket};
+use nurtex_protocol::packets::configuration::{ServersideResourcePackResponse};
+use nurtex_protocol::packets::handshake::{ServersideGreet, ServersideHandshakePacket};
 use nurtex_protocol::packets::login::{ClientsideLoginPacket, ServersideLoginAcknowledged, ServersideLoginPacket, ServersideLoginStart};
 use nurtex_protocol::packets::play::ServersidePlayPacket;
+use nurtex_protocol::types::{ClientIntention, ResourcePackState};
 use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -149,7 +150,7 @@ impl Client {
       };
 
       conn
-        .write_handshake_packet(ServersideHandshakePacket::Intention(ServersideGreet {
+        .write_handshake_packet(ServersideHandshakePacket::Greet(ServersideGreet {
           protocol_version: protocol_version,
           server_host: addr.ip().to_string(),
           server_port: addr.port(),

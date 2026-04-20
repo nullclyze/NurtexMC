@@ -150,15 +150,26 @@ impl<K: Buffer + Eq + Hash, V: Buffer> Buffer for HashMap<K, V> {
   }
 }
 
-impl Buffer for Vec<u8> {
+impl<T: Buffer> Buffer for Vec<T> {
   fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let length = i32::read_varint(buffer)? as usize;
-    crate::read_bytes(buffer, length).map(|b| b.to_vec())
+    let mut contents = Vec::with_capacity(usize::min(length, 65536));
+
+    for _ in 0..length {
+      contents.push(T::read_buf(buffer)?);
+    }
+
+    Some(contents)
   }
 
   fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
     (self.len() as i32).write_varint(buffer)?;
-    buffer.write_all(self)
+
+    for item in self.iter() {
+      T::write_buf(item, buffer)?;
+    }
+
+    Ok(())
   }
 }
 

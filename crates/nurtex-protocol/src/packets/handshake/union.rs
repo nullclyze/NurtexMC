@@ -1,41 +1,14 @@
+use nurtex_derive::PacketUnion;
+
 use std::io::{self, Cursor, Write};
 
 use crate::packets::handshake::ServersideGreet;
-use crate::{IntoPacket, Packet};
+use crate::Packet;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, PacketUnion)]
 pub enum ServersideHandshakePacket {
-  Intention(ServersideGreet),
-}
-
-impl Packet for ServersideHandshakePacket {
-  fn id(&self) -> u32 {
-    match self {
-      Self::Intention(_) => 0x0,
-    }
-  }
-
-  fn read(id: u32, buf: &mut Cursor<&[u8]>) -> Option<Self> {
-    if id == 0 { Some(Self::Intention(ServersideGreet::read(buf)?)) } else { None }
-  }
-
-  fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-    match self {
-      Self::Intention(p) => p.write(buf),
-    }
-  }
-}
-
-impl IntoPacket<ServersideHandshakePacket> for ServersideHandshakePacket {
-  fn sample(self) -> ServersideHandshakePacket {
-    self
-  }
-}
-
-impl IntoPacket<ServersideHandshakePacket> for ServersideGreet {
-  fn sample(self) -> ServersideHandshakePacket {
-    ServersideHandshakePacket::Intention(self)
-  }
+  #[packet_id = "0x00"]
+  Greet(ServersideGreet),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -43,7 +16,7 @@ pub enum ClientsideHandshakePacket {}
 
 impl Packet for ClientsideHandshakePacket {
   fn id(&self) -> u32 {
-    0
+    match *self {}
   }
 
   fn read(_id: u32, _buf: &mut Cursor<&[u8]>) -> Option<Self> {
@@ -51,12 +24,6 @@ impl Packet for ClientsideHandshakePacket {
   }
 
   fn write(&self, _buf: &mut impl Write) -> io::Result<()> {
-    Ok(())
-  }
-}
-
-impl IntoPacket<ClientsideHandshakePacket> for ClientsideHandshakePacket {
-  fn sample(self) -> ClientsideHandshakePacket {
-    self
+    match *self {}
   }
 }
