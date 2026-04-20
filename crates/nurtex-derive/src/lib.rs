@@ -150,7 +150,7 @@ pub fn derive_packet_union(input: proc_macro::TokenStream) -> proc_macro::TokenS
     });
 
     quote! {
-      impl crate::Packet for #enum_name {
+      impl crate::ProtocolPacket for #enum_name {
         fn id(&self) -> u32 {
           match self {
             #(#id_arms)*

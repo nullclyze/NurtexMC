@@ -3,7 +3,7 @@ use nurtex_derive::PacketUnion;
 use std::io::{self, Cursor, Write};
 
 use crate::packets::handshake::ServersideGreet;
-use crate::Packet;
+use crate::ProtocolPacket;
 
 #[derive(Clone, Debug, PartialEq, PacketUnion)]
 pub enum ServersideHandshakePacket {
@@ -16,7 +16,7 @@ pub enum ServersideHandshakePacket {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientsideHandshakePacket {}
 
-impl Packet for ClientsideHandshakePacket {
+impl ProtocolPacket for ClientsideHandshakePacket {
   fn id(&self) -> u32 {
     match *self {}
   }

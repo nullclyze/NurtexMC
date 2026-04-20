@@ -6,11 +6,11 @@ use std::fmt::Debug;
 use std::io::{self, Read};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::Packet;
+use crate::ProtocolPacket;
 
 pub async fn write_packet<P, W>(packet: &P, stream: &mut W, compression_threshold: Option<u32>, cipher: &mut Option<AesEncryptor>) -> io::Result<()>
 where
-  P: Packet + Debug,
+  P: ProtocolPacket + Debug,
   W: AsyncWrite + Unpin + Send,
 {
   let raw_packet = serialize_packet(packet).unwrap();
@@ -19,7 +19,7 @@ where
 
 pub fn serialize_packet<P>(packet: &P) -> Option<Box<[u8]>>
 where
-  P: Packet + Debug,
+  P: ProtocolPacket + Debug,
 {
   let mut buf = Vec::new();
   (packet.id() as i32).write_varint(&mut buf).ok()?;

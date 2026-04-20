@@ -8,7 +8,7 @@ use tokio::io::AsyncRead;
 use tokio_util::bytes::Buf;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
-use crate::Packet;
+use crate::ProtocolPacket;
 
 fn parse_frame(buffer: &mut Cursor<Vec<u8>>) -> Option<Box<[u8]>> {
   let mut buffer_copy = Cursor::new(&buffer.get_ref()[buffer.position() as usize..]);
@@ -33,7 +33,7 @@ fn parse_frame(buffer: &mut Cursor<Vec<u8>>) -> Option<Box<[u8]>> {
   Some(data.into_boxed_slice())
 }
 
-pub fn deserialize_packet<P: Packet + Debug>(stream: &mut Cursor<&[u8]>) -> Option<P> {
+pub fn deserialize_packet<P: ProtocolPacket + Debug>(stream: &mut Cursor<&[u8]>) -> Option<P> {
   let packet_id = i32::read_varint(stream)? as u32;
   P::read(packet_id, stream)
 }
@@ -62,7 +62,7 @@ pub fn compression_decoder(stream: &mut Cursor<&[u8]>, compression_threshold: u3
   Some(decoded_buf.into_boxed_slice())
 }
 
-pub async fn read_packet<P: Packet + Debug, R>(stream: &mut R, buffer: &mut Cursor<Vec<u8>>, compression_threshold: Option<u32>, cipher: &mut Option<AesDecryptor>) -> Option<P>
+pub async fn read_packet<P: ProtocolPacket + Debug, R>(stream: &mut R, buffer: &mut Cursor<Vec<u8>>, compression_threshold: Option<u32>, cipher: &mut Option<AesDecryptor>) -> Option<P>
 where
   R: AsyncRead + Unpin + Send + Sync,
 {

@@ -10,20 +10,15 @@ pub enum ClientIntention {
   Login,
 }
 
-impl From<i32> for ClientIntention {
-  fn from(value: i32) -> Self {
-    match value {
-      1 => ClientIntention::Status,
-      2 => ClientIntention::Login,
-      _ => ClientIntention::Status,
-    }
-  }
-}
-
 impl Buffer for ClientIntention {
   fn read_buf(buffer: &mut Cursor<&[u8]>) -> Option<Self> {
     let id = i32::read_varint(buffer)?;
-    Some(id.into())
+
+    Some(match id {
+      1 => ClientIntention::Status,
+      2 => ClientIntention::Login,
+      _ => return None
+    })
   }
 
   fn write_buf(&self, buffer: &mut impl Write) -> io::Result<()> {
