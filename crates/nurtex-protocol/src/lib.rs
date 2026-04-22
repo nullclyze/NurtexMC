@@ -6,5 +6,4 @@ pub mod writer;
 
 mod packet;
 
-pub use nurtex_derive::{Packet, PacketUnion};
 pub use packet::*;

@@ -15,7 +15,7 @@ use nurtex_protocol::types::{ClientIntention, ResourcePackState};
 use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 
-use crate::bot::{BotProfile, ClientInfo, get_protocol_from_version};
+use crate::bot::{BotProfile, ClientInfo};
 use crate::swarm::{Speedometer, SwarmObject};
 
 /// Структура Minecraft бота
@@ -31,29 +31,28 @@ pub struct Bot {
 
 impl Bot {
   /// Метод создания нового бота
-  pub fn create(username: impl Into<String>, version: impl Into<String>) -> Self {
-    Self::create_with_options(username, version, 45, 45, None)
+  pub fn create(username: impl Into<String>) -> Self {
+    Self::create_with_options(username, 45, 45, None)
   }
 
   /// Метод создания нового бота из объекта роя
   pub fn create_from_object(object: SwarmObject) -> Self {
-    Self::create_with_options(object.username, object.version, object.reader_capacity, object.writer_capacity, None)
+    Self::create_with_options(object.username, object.reader_capacity, object.writer_capacity, None)
   }
 
   /// Метод создания нового бота со спидометром
-  pub fn create_with_speedometer(username: impl Into<String>, version: impl Into<String>, speedometer: Arc<Speedometer>) -> Self {
-    Self::create_with_options(username, version, 45, 45, Some(speedometer))
+  pub fn create_with_speedometer(username: impl Into<String>, speedometer: Arc<Speedometer>) -> Self {
+    Self::create_with_options(username, 45, 45, Some(speedometer))
   }
 
   /// Метод создания нового бота из объекта роя со спидометром
   pub fn create_from_object_with_speedometer(object: SwarmObject, speedometer: Arc<Speedometer>) -> Self {
-    Self::create_with_options(object.username, object.version, object.reader_capacity, object.writer_capacity, Some(speedometer))
+    Self::create_with_options(object.username, object.reader_capacity, object.writer_capacity, Some(speedometer))
   }
 
   /// Метод создания нового бота с заданными опциями
   pub fn create_with_options(
     username: impl Into<String>,
-    version: impl Into<String>,
     reader_capacity: usize,
     writer_capacity: usize,
     speedometer: Option<Arc<Speedometer>>,
@@ -69,7 +68,7 @@ impl Bot {
     Self::run_writer(conn.clone(), writer.clone());
 
     let name = username.into();
-    let profile = BotProfile::new(name.clone(), get_protocol_from_version(&version.into()));
+    let profile = BotProfile::new(name.clone());
 
     Self {
       username: name,
@@ -188,7 +187,7 @@ impl Bot {
 
       conn
         .write_handshake_packet(ServersideHandshakePacket::Greet(ServersideGreet {
-          protocol_version: profile_data.protocol_version,
+          protocol_version: 774,
           server_host: host,
           server_port: server_port,
           intention: ClientIntention::Login,
@@ -321,7 +320,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_packet_handling() -> io::Result<()> {
-    let mut bot = Bot::create("nurtex_bot", "1.21.11");
+    let mut bot = Bot::create("nurtex_bot");
 
     bot.connect("localhost", 25565);
 
