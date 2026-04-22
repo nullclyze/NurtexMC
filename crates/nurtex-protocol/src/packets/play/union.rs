@@ -1,7 +1,7 @@
 use nurtex_derive::PacketUnion;
 
 use crate::packets::play::{
-  ClientsideAddResourcePack, ClientsideChunkCacheCenter, ClientsideChunkCacheRadius, ClientsideClearChat, ClientsideDamageEvent, ClientsideDisconnect, ClientsideEntityPositionSync, ClientsideExplosion, ClientsideGameEvent, ClientsideLogin, ClientsideMoveVehicle, ClientsideOpenContainer, ClientsidePing, ClientsidePingResponse, ClientsidePlayerChat, ClientsidePlayerCombatKill, ClientsidePlayerLookAt, ClientsidePlayerPosition, ClientsidePlayerRotation, ClientsideRemoveEntities, ClientsideRemoveEntityEffect, ClientsideRemoveResourcePack, ClientsideRotateHead, ClientsideSectionBlocksUpdate, ClientsideSetCamera, ClientsideSetEntityLink, ClientsideSetEntityVelocity, ClientsideSetExperience, ClientsideSetHealth, ClientsideSetPassengers, ClientsideSpawnEntity, ClientsideTransfer, ClientsideUnloadChunk, ClientsideUpdateEntityPos, ClientsideUpdateEntityPosRot, ClientsideUpdateEntityRot, MultisideKeepAlive, ServersideAcceptTeleportation, ServersideChatCommand, ServersideClientCommand, ServersideInteract, ServersideMovePlayerPos, ServersideMovePlayerPosRot, ServersideMovePlayerRot, ServersideMovePlayerStatusOnly, ServersidePingRequest, ServersidePlayerAction, ServersidePong, ServersideSetHeldItem, ServersideSwingArm, ServersideUseItem
+  ClientsideAddResourcePack, ClientsideChunkCacheCenter, ClientsideChunkCacheRadius, ClientsideClearChat, ClientsideDamageEvent, ClientsideDisconnect, ClientsideEntityPositionSync, ClientsideExplosion, ClientsideGameEvent, ClientsideLogin, ClientsideMoveVehicle, ClientsideOpenContainer, ClientsidePing, ClientsidePingResponse, ClientsidePlayerChat, ClientsidePlayerCombatKill, ClientsidePlayerLookAt, ClientsidePlayerPosition, ClientsidePlayerRotation, ClientsideRemoveEntities, ClientsideRemoveEntityEffect, ClientsideRemoveResourcePack, ClientsideRotateHead, ClientsideSectionBlocksUpdate, ClientsideSetCamera, ClientsideSetEntityLink, ClientsideSetEntityVelocity, ClientsideSetExperience, ClientsideSetHealth, ClientsideSetPassengers, ClientsideSpawnEntity, ClientsideSystemChat, ClientsideTransfer, ClientsideUnloadChunk, ClientsideUpdateEntityPos, ClientsideUpdateEntityPosRot, ClientsideUpdateEntityRot, MultisideKeepAlive, ServersideAcceptTeleportation, ServersideChatCommand, ServersideChatMessage, ServersideClientCommand, ServersideInteract, ServersideMovePlayerPos, ServersideMovePlayerPosRot, ServersideMovePlayerRot, ServersideMovePlayerStatusOnly, ServersidePingRequest, ServersidePlayerAction, ServersidePong, ServersideSetHeldItem, ServersideSwingArm, ServersideUseItem
 };
 
 #[derive(Clone, Debug, PartialEq, PacketUnion)]
@@ -44,6 +44,8 @@ pub enum ClientsidePlayPacket {
   Disconnect(ClientsideDisconnect),
   #[packet_id = 0x3F]
   PlayerChat(ClientsidePlayerChat),
+  #[packet_id = 0x77]
+  SystemChat(ClientsideSystemChat),
   #[packet_id = 0x7F]
   Transfer(ClientsideTransfer),
   #[packet_id = 0x62]
@@ -108,6 +110,8 @@ pub enum ServersidePlayPacket {
   ClientCommand(ServersideClientCommand),
   #[packet_id = 0x06]
   ChatCommand(ServersideChatCommand),
+  #[packet_id = 0x08]
+  ChatMessage(ServersideChatMessage),
   #[packet_id = 0x34]
   SetHeldItem(ServersideSetHeldItem),
   #[packet_id = 0x19]

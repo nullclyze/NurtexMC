@@ -2,7 +2,7 @@ use nurtex_codec::Buffer;
 use nurtex_derive::Packet;
 use uuid::Uuid;
 
-use crate::types::{BlockPosition, ClientCommand, Face, GameEvent, InteractType, LpVector3, PhysicsFlags, PlayerAction, PlayerCommand, RelativeHand, ResourcePackState, Rotation, TeleportFlags, Vector3};
+use crate::types::{BlockPosition, ClientCommand, Face, GameEvent, InteractType, LastSeenMessage, LpVector3, PhysicsFlags, PlayerAction, PlayerCommand, RelativeHand, ResourcePackState, Rotation, TeleportFlags, Vector3};
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct MultisideKeepAlive {
@@ -169,6 +169,15 @@ pub struct ClientsidePlayerChat {
   pub message: String,
   pub timestamp: i64,
   pub salt: i64,
+  #[packet(varint)]
+  pub message_id: i32,
+  pub signature: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Packet)]
+pub struct ClientsideSystemChat {
+  pub message: String,
+  pub overlay: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Packet)]
@@ -380,6 +389,15 @@ pub struct ServersideClientCommand {
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct ServersideChatCommand {
   pub command: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Packet)]
+pub struct ServersideChatMessage {
+  pub message: String,
+  pub timestamp: i64,
+  pub salt: i64,
+  pub signature: Option<Vec<u8>>,
+  pub last_seen_messages: Vec<LastSeenMessage>,
 }
 
 #[derive(Clone, Debug, PartialEq, Packet)]
