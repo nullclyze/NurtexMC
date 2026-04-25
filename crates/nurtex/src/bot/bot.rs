@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 
 use crate::bot::capture::{capture_components, capture_connection};
 use crate::bot::{BotComponents, BotHandle, BotProfile, ClientInfo};
-use crate::swarm::{Speedometer, SwarmObject};
+use crate::swarm::Speedometer;
 
 /// Структура Minecraft бота
 pub struct Bot {
@@ -38,19 +38,9 @@ impl Bot {
     Self::create_with_options(username, 45, 45, None)
   }
 
-  /// Метод создания нового бота из объекта роя
-  pub fn create_from_object(object: SwarmObject) -> Self {
-    Self::create_with_options(object.username, object.reader_capacity, object.writer_capacity, None)
-  }
-
   /// Метод создания нового бота со спидометром
   pub fn create_with_speedometer(username: impl Into<String>, speedometer: Arc<Speedometer>) -> Self {
     Self::create_with_options(username, 45, 45, Some(speedometer))
-  }
-
-  /// Метод создания нового бота из объекта роя со спидометром
-  pub fn create_from_object_with_speedometer(object: SwarmObject, speedometer: Arc<Speedometer>) -> Self {
-    Self::create_with_options(object.username, object.reader_capacity, object.writer_capacity, Some(speedometer))
   }
 
   /// Метод создания нового бота с заданными опциями
@@ -81,6 +71,9 @@ impl Bot {
     let connection = Arc::clone(&self.connection);
 
     tokio::spawn(async move {
+      // Может быть гонка условий с NurtexConnection, поэтому небольшая задержка нужна
+      tokio::time::sleep(Duration::from_millis(600)).await;
+
       loop {
         let has_connection = {
           if let Ok(conn_guard) = connection.try_read() {
@@ -121,6 +114,9 @@ impl Bot {
     let connection = Arc::clone(&self.connection);
 
     tokio::spawn(async move {
+      // Может быть гонка условий с NurtexConnection, поэтому небольшая задержка нужна
+      tokio::time::sleep(Duration::from_millis(1000)).await;
+
       loop {
         if let Ok(packet) = writer_rx.recv().await {
           if let Ok(conn_guard) = connection.try_read() {

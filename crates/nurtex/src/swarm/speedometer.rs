@@ -126,7 +126,10 @@ mod tests {
   use std::sync::Arc;
   use std::time::Duration;
 
-  use crate::swarm::{Speedometer, SpeedometerEvent, Swarm, SwarmObject};
+  use crate::{
+    bot::Bot,
+    swarm::{JoinDelay, Speedometer, SpeedometerEvent, Swarm},
+  };
 
   #[tokio::test]
   async fn test_instant() -> io::Result<()> {
@@ -135,7 +138,7 @@ mod tests {
     let mut swarm = Swarm::create_with_speedometer(Arc::clone(&speedometer));
 
     for i in 0..300 {
-      swarm.add_object(SwarmObject::create(format!("bot_{}", i), "1.21.11"));
+      swarm.add_bot(Bot::create_with_speedometer(format!("bot_{}", i), Arc::clone(&speedometer)));
     }
 
     let mut speedometer_events = speedometer.subscribe();
@@ -175,7 +178,7 @@ mod tests {
     let mut swarm = Swarm::create_with_speedometer(Arc::clone(&speedometer));
 
     for i in 0..100 {
-      swarm.add_object(SwarmObject::create(format!("bot_{}", i), "1.21.11"));
+      swarm.add_bot(Bot::create_with_speedometer(format!("bot_{}", i), Arc::clone(&speedometer)));
     }
 
     let mut speedometer_events = speedometer.subscribe();
@@ -196,7 +199,7 @@ mod tests {
       }
     });
 
-    swarm.launch("localhost", 25565, 100).await;
+    swarm.launch("localhost", 25565, JoinDelay::fixed(100)).await;
 
     tokio::time::sleep(Duration::from_secs(20)).await;
 
