@@ -5,27 +5,29 @@ use std::time::Duration;
 use nurtex_protocol::connection::address::convert_address;
 use nurtex_protocol::connection::utils::handle_encryption_request;
 use nurtex_protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
-use nurtex_protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation};
+use nurtex_protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation, ServersideClientCommand};
 use nurtex_protocol::packets::{
   configuration::{ClientsideConfigurationPacket, ServersideAcknowledgeFinishConfiguration, ServersideConfigurationPacket, ServersideKnownPacks},
   handshake::{ServersideGreet, ServersideHandshakePacket},
   login::{ClientsideLoginPacket, ServersideLoginAcknowledged, ServersideLoginPacket, ServersideLoginStart},
   play::ServersidePlayPacket,
 };
-use nurtex_protocol::types::{ClientIntention, ResourcePackState, Rotation};
+use nurtex_protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
 use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::bot::capture::{capture_components, capture_connection};
+use crate::bot::plugins::BotPlugins;
 use crate::bot::{BotComponents, BotHandle, BotProfile, ClientInfo};
 use crate::swarm::Speedometer;
 
 /// Структура Minecraft бота
 pub struct Bot {
+  pub profile: Arc<RwLock<BotProfile>>,
+  pub connection: Arc<RwLock<Option<NurtexConnection>>>,
+  plugins: BotPlugins,
   username: String,
-  profile: Arc<RwLock<BotProfile>>,
   handle: BotHandle,
-  connection: Arc<RwLock<Option<NurtexConnection>>>,
   reader_tx: Arc<broadcast::Sender<ClientsidePacket>>,
   writer_tx: Arc<broadcast::Sender<ServersidePlayPacket>>,
   speedometer: Option<Arc<Speedometer>>,
@@ -48,16 +50,15 @@ impl Bot {
     let (reader_tx, _) = broadcast::channel(reader_capacity);
     let (writer_tx, _) = broadcast::channel(writer_capacity);
 
-    let conn = Arc::new(RwLock::new(None::<NurtexConnection>));
-
     let name = username.into();
     let profile = BotProfile::new(name.clone());
 
     Self {
-      username: name,
       profile: Arc::new(RwLock::new(profile)),
+      connection: Arc::new(RwLock::new(None::<NurtexConnection>)),
+      plugins: BotPlugins::default(),
+      username: name,
       handle: BotHandle::default(),
-      connection: conn,
       reader_tx: Arc::new(reader_tx),
       writer_tx: Arc::new(writer_tx),
       speedometer,
@@ -76,12 +77,8 @@ impl Bot {
 
       loop {
         let has_connection = {
-          if let Ok(conn_guard) = connection.try_read() {
-            conn_guard.is_some()
-          } else {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            continue;
-          }
+          let conn_guard = connection.read().await;
+          conn_guard.is_some()
         };
 
         if !has_connection {
@@ -90,12 +87,8 @@ impl Bot {
         }
 
         let packet = {
-          if let Ok(conn_guard) = connection.try_read() {
-            if let Some(conn) = conn_guard.as_ref() { conn.read_packet().await } else { None }
-          } else {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            continue;
-          }
+          let conn_guard = connection.read().await;
+          if let Some(conn) = conn_guard.as_ref() { conn.read_packet().await } else { None }
         };
 
         if let Some(packet) = packet {
@@ -119,15 +112,11 @@ impl Bot {
 
       loop {
         if let Ok(packet) = writer_rx.recv().await {
-          if let Ok(conn_guard) = connection.try_read() {
-            if let Some(conn) = conn_guard.as_ref() {
-              let _ = conn.write_play_packet(packet).await;
-            } else {
-              tokio::time::sleep(Duration::from_millis(50)).await;
-            }
+          let conn_guard = connection.read().await;
+          if let Some(conn) = conn_guard.as_ref() {
+            let _ = conn.write_play_packet(packet).await;
           } else {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            continue;
+            tokio::time::sleep(Duration::from_millis(50)).await;
           }
         }
       }
@@ -137,6 +126,12 @@ impl Bot {
   /// Метод установки информации клиента
   pub async fn set_information(&self, information: ClientInfo) {
     self.profile.write().await.information = information;
+  }
+
+  /// Метод установки плагинов
+  pub fn set_plugins(mut self, plugins: BotPlugins) -> Self {
+    self.plugins = plugins;
+    self
   }
 
   /// Метод получения юзернейма
@@ -186,10 +181,12 @@ impl Bot {
 
   /// Метод подключения бота к серверу, который возвращает хендл бота
   pub fn connect_with_handle(&self, server_host: impl Into<String>, server_port: u16) -> BotHandle {
-    let connection = self.connection.clone();
-    let profile = self.profile.clone();
+    let connection = Arc::clone(&self.connection);
+    let profile = Arc::clone(&self.profile);
+    let components = Arc::clone(&self.components);
     let speedometer = self.speedometer.clone();
-    let components = self.components.clone();
+    let plugins = self.plugins.clone();
+    let reader_tx = Arc::clone(&self.reader_tx);
     let host = server_host.into();
 
     let connection_handle = tokio::spawn(async move {
@@ -349,12 +346,21 @@ impl Bot {
         speedometer.bot_joined(username_for_speedometer);
       }
 
+      let mut packet_rx = {
+        let reader_tx = Arc::clone(&reader_tx);
+        reader_tx.subscribe()
+      };
+
       loop {
-        let Some(packet) = ({
-          let conn_guard = connection.read().await;
-          if let Some(conn) = conn_guard.as_ref() { conn.read_play_packet().await } else { None }
-        }) else {
-          continue;
+        let packet = match packet_rx.recv().await {
+          Ok(ClientsidePacket::Play(play_packet)) => play_packet,
+          Ok(_) => continue,
+          Err(broadcast::error::RecvError::Lagged(_)) => {
+            continue;
+          }
+          Err(broadcast::error::RecvError::Closed) => {
+            break Ok(());
+          }
         };
 
         match packet {
@@ -364,6 +370,19 @@ impl Bot {
               Ok(())
             })
             .await?;
+
+            if plugins.auto_respawn.enabled && p.enable_respawn_screen {
+              tokio::time::sleep(Duration::from_millis(plugins.auto_respawn.respawn_delay)).await;
+
+              capture_connection(&connection, async |conn| {
+                conn
+                  .write_play_packet(ServersidePlayPacket::ClientCommand(ServersideClientCommand {
+                    command: ClientCommand::PerformRespawn,
+                  }))
+                  .await
+              })
+              .await?;
+            }
           }
           ClientsidePlayPacket::KeepAlive(p) => {
             capture_connection(&connection, async |conn| {
@@ -430,6 +449,23 @@ impl Bot {
             })
             .await?;
           }
+          ClientsidePlayPacket::PlayerCombatKill(_p) => {
+            if plugins.auto_respawn.enabled {
+              tokio::time::sleep(Duration::from_millis(plugins.auto_respawn.respawn_delay)).await;
+
+              capture_connection(&connection, async |conn| {
+                conn
+                  .write_play_packet(ServersidePlayPacket::ClientCommand(ServersideClientCommand {
+                    command: ClientCommand::PerformRespawn,
+                  }))
+                  .await
+              })
+              .await?;
+            }
+          }
+          ClientsidePlayPacket::Disconnect(_p) => {
+            return Ok(());
+          }
           _ => {}
         }
       }
@@ -439,6 +475,15 @@ impl Bot {
       connection_handle: Some(connection_handle),
       reader_handle: Some(self.run_reader()),
       writer_handle: Some(self.run_writer()),
+    }
+  }
+
+  /// Метод ожидания завершения хэндла подключения
+  pub async fn wait_handle(&mut self) -> std::io::Result<()> {
+    if let Some(handle) = self.handle.connection_handle.as_mut() {
+      handle.await?
+    } else {
+      Ok(())
     }
   }
 
@@ -475,6 +520,48 @@ impl Bot {
   pub fn get_components(&self) -> Arc<RwLock<BotComponents>> {
     Arc::clone(&self.components)
   }
+
+  /// Метод получения опциональной позиции бота
+  pub fn try_get_position(&self) -> Option<Vector3> {
+    match self.components.try_read() {
+      Ok(g) => Some(g.position.clone()),
+      Err(_) => None,
+    }
+  }
+
+  /// Метод получения опционального здоровья бота
+  pub fn try_get_health(&self) -> Option<Vector3> {
+    match self.components.try_read() {
+      Ok(g) => Some(g.position.clone()),
+      Err(_) => None,
+    }
+  }
+
+  /// Метод получения опциональной ротации бота
+  pub fn try_get_rotation(&self) -> Option<f32> {
+    match self.components.try_read() {
+      Ok(g) => Some(g.health),
+      Err(_) => None,
+    }
+  }
+
+  /// Метод получения позиции бота
+  pub async fn get_position(&self) -> Vector3 {
+    let guard = self.components.read().await;
+    guard.position.clone()
+  }
+
+  /// Метод получения ротации бота
+  pub async fn get_rotation(&self) -> Rotation {
+    let guard = self.components.read().await;
+    guard.rotation.clone()
+  }
+
+  /// Метод получения здоровья бота
+  pub async fn get_health(&self) -> f32 {
+    let guard = self.components.read().await;
+    guard.health
+  }
 }
 
 #[cfg(test)]
@@ -484,6 +571,7 @@ mod tests {
   use nurtex_protocol::connection::ClientsidePacket;
 
   use crate::bot::Bot;
+  use crate::bot::plugins::{AutoRespawnPlugin, BotPlugins};
 
   #[tokio::test]
   async fn test_packet_handling() -> io::Result<()> {
@@ -498,5 +586,18 @@ mod tests {
         println!("Бот {} получил пакет: {:?}", bot.username(), packet);
       }
     }
+  }
+
+  #[tokio::test]
+  async fn test_auto_respawn() -> io::Result<()> {
+    let mut bot = Bot::create("nurtex_bot").set_plugins(BotPlugins {
+      auto_respawn: AutoRespawnPlugin {
+        enabled: true,
+        respawn_delay: 2000,
+      },
+    });
+
+    bot.connect("localhost", 25565);
+    bot.wait_handle().await
   }
 }

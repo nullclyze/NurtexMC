@@ -1,5 +1,7 @@
+pub mod capture;
+pub mod plugins;
+
 mod bot;
-mod capture;
 mod components;
 mod handle;
 mod information;

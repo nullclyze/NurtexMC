@@ -239,7 +239,18 @@ mod tests {
     }
 
     swarm.instant_launch("localhost", 25565);
+
     tokio::time::sleep(Duration::from_secs(3)).await;
+
+    swarm.for_each_parallel(async |bot| {
+      let position = bot.get_position().await;
+      let rotation = bot.get_rotation().await;
+
+      println!("[{}] Позиция: {:?}, Ротация: {:?}", bot.username(), position, rotation);
+    });
+
+    tokio::time::sleep(Duration::from_secs(8)).await;
+
     swarm.shutdown().await?;
 
     Ok(())

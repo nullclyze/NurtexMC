@@ -11,7 +11,7 @@ pub async fn capture_connection<F>(connection: &Arc<RwLock<Option<NurtexConnecti
 where
   F: AsyncFnOnce(&NurtexConnection) -> io::Result<()>,
 {
-  let guard = connection.write().await;
+  let guard = connection.read().await;
   let Some(conn) = guard.as_ref() else {
     return Ok(());
   };

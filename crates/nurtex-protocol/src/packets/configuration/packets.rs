@@ -1,7 +1,7 @@
 use nurtex_codec::Buffer;
 use nurtex_derive::Packet;
 
-use crate::types::{AccurateHand, ChatMode, DisplayedSkinParts, KnownPack, ParticleStatus, ReportDetail, ResourcePackState, ServerLink, TagGroup};
+use crate::types::{AccurateHand, ChatMode, DisplayedSkinParts, KnownPack, ParticleStatus, ReportDetail, ResourcePackState, ServerLink, TagGroup, TextComponent};
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct MultisideKeepAlive {
@@ -27,8 +27,7 @@ pub struct ClientsidePluginMessage {
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct ClientsideDisconnect {
-  #[packet(vec_end)]
-  pub reason: Vec<u8>,
+  pub reason: TextComponent,
 }
 
 #[derive(Clone, Debug, PartialEq, Packet)]

@@ -21,6 +21,7 @@ mod rotation;
 mod server_link;
 mod tag_group;
 mod teleport_flags;
+mod text_component;
 mod vector;
 
 pub use block_position::*;
@@ -46,4 +47,5 @@ pub use rotation::*;
 pub use server_link::*;
 pub use tag_group::*;
 pub use teleport_flags::*;
+pub use text_component::*;
 pub use vector::*;

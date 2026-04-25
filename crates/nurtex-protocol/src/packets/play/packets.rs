@@ -2,7 +2,7 @@ use nurtex_codec::Buffer;
 use nurtex_derive::Packet;
 use uuid::Uuid;
 
-use crate::types::{BlockPosition, ClientCommand, Experience, Face, GameEvent, InteractType, LastSeenMessage, LpVector3, PhysicsFlags, PlayerAction, PlayerCommand, RelativeHand, ResourcePackState, Rotation, TeleportFlags, Vector3};
+use crate::types::{BlockPosition, ClientCommand, Experience, Face, GameEvent, InteractType, LastSeenMessage, LpVector3, PhysicsFlags, PlayerAction, PlayerCommand, RelativeHand, ResourcePackState, Rotation, TeleportFlags, TextComponent, Vector3};
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct MultisideKeepAlive {
@@ -151,7 +151,7 @@ pub struct ClientsideRemoveEntities {
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct ClientsideDisconnect {
-  pub reason: String,
+  pub reason: TextComponent,
 }
 
 #[derive(Clone, Debug, PartialEq, Packet)]

@@ -1,10 +1,8 @@
-use std::io::Error;
-
 use tokio::task::JoinHandle;
 
 /// Структура хэндла бота
 pub struct BotHandle {
-  pub connection_handle: Option<JoinHandle<Result<(), Error>>>,
+  pub connection_handle: Option<JoinHandle<core::result::Result<(), std::io::Error>>>,
   pub reader_handle: Option<JoinHandle<()>>,
   pub writer_handle: Option<JoinHandle<()>>,
 }

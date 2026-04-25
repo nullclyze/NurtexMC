@@ -1,11 +1,11 @@
 use nurtex_codec::Buffer;
 use nurtex_derive::Packet;
 
-use crate::types::Property;
+use crate::types::{Property, TextComponent};
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct ClientsideLoginDisconnect {
-  pub reason: String,
+  pub reason: TextComponent,
 }
 
 #[derive(Clone, Debug, PartialEq, Packet)]
