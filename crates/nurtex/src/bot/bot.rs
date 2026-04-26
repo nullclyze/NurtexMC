@@ -751,9 +751,10 @@ mod tests {
   use std::io;
 
   use nurtex_protocol::connection::ClientsidePacket;
+  use nurtex_protocol::packets::play::ClientsidePlayPacket;
 
-  use crate::bot::Bot;
   use crate::bot::plugins::{AutoReconnectPlugin, AutoRespawnPlugin, BotPlugins};
+  use crate::bot::{Bot, BotChatExt};
 
   #[tokio::test]
   async fn test_packet_handling() -> io::Result<()> {
@@ -766,6 +767,15 @@ mod tests {
     loop {
       if let Ok(ClientsidePacket::Play(packet)) = reader.recv().await {
         println!("Бот {} получил пакет: {:?}", bot.username(), packet);
+
+        // + Доп проверка взаимодействия с чатом
+
+        match packet {
+          ClientsidePlayPacket::KeepAlive(p) => {
+            bot.chat_message(format!("Получен KeepAlive: {}", p.id)).await?;
+          }
+          _ => {}
+        }
       }
     }
   }

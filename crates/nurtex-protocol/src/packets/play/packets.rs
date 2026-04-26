@@ -2,7 +2,7 @@ use nurtex_codec::Buffer;
 use nurtex_derive::Packet;
 use uuid::Uuid;
 
-use crate::types::{BlockPosition, ClientCommand, Experience, Face, GameEvent, InteractType, LastSeenMessage, LpVector3, PhysicsFlags, PlayerAction, PlayerCommand, RelativeHand, ResourcePackState, Rotation, TeleportFlags, Vector3};
+use crate::types::{BlockPosition, ClientCommand, Experience, Face, GameEvent, InteractType, AdditionalMessageInfo, LpVector3, PhysicsFlags, PlayerAction, PlayerCommand, RelativeHand, ResourcePackState, Rotation, TeleportFlags, Vector3};
 
 #[derive(Clone, Debug, PartialEq, Packet)]
 pub struct MultisideKeepAlive {
@@ -396,7 +396,7 @@ pub struct ServersideChatMessage {
   pub timestamp: i64,
   pub salt: i64,
   pub signature: Option<Vec<u8>>,
-  pub last_seen_messages: Vec<LastSeenMessage>,
+  pub additional_info: AdditionalMessageInfo,
 }
 
 #[derive(Clone, Debug, PartialEq, Packet)]

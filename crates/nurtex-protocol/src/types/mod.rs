@@ -1,3 +1,4 @@
+mod additional_message_info;
 mod block_position;
 mod chat_mode;
 mod client_command;
@@ -24,6 +25,7 @@ mod teleport_flags;
 mod text_component;
 mod vector;
 
+pub use additional_message_info::*;
 pub use block_position::*;
 pub use chat_mode::*;
 pub use client_command::*;
