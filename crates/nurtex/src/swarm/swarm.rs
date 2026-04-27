@@ -99,7 +99,7 @@ impl Swarm {
     self.bots.push(bot);
   }
 
-  /// Метод добавления нескольих ботов в рой
+  /// Метод добавления нескольких ботов в рой
   pub fn add_bots(&mut self, bots: Vec<Bot>) {
     for bot in bots {
       self.bots.push(Arc::new(bot));
