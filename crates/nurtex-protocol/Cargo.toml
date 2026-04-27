@@ -1,11 +1,10 @@
 [package]
 name = "nurtex-protocol"
-version = "1.0.0"
-edition = "2024"
-license = "MIT"
 description = "Library that allows a Minecraft client to communicate with a server."
-repository = "https://github.com/NurtexMC/nurtex"
-homepage = "https://github.com/NurtexMC/nurtex"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/nurtex-protocol/latest/"
 readme = "README.md"
 keywords = ["minecraft", "protocol"]

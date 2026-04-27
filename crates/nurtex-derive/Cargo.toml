@@ -1,11 +1,10 @@
 [package]
 name = "nurtex-derive"
-version = "1.0.0"
-edition = "2024"
-license = "MIT"
 description = "Library containing auxiliary procedural macros for serializing packet types."
-repository = "https://github.com/NurtexMC/nurtex"
-homepage = "https://github.com/NurtexMC/nurtex"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/nurtex-derive/latest/"
 readme = "README.md"
 keywords = ["minecraft", "derive", "macro"]
