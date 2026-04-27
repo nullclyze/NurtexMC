@@ -3,7 +3,7 @@
 A collection of lightweight Rust libraries for creating Minecraft bots. Async, optimized, ease of coding.
 
 > [!WARNING]
-> All crates are currently in **early** development. The API may change frequently, and may be unstable, have frequent errors,and have limited functionality. Bugs or features should be reported to the GitHub **issues**.
+> All crates are currently in **early** development. The API may change frequently, and may be unstable, have frequent errors, and have limited functionality. Bugs or features should be reported to the GitHub **issues**.
 
 
 # Focusing
@@ -44,3 +44,60 @@ All crates focus on:
 - [nurtex-derive](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-derive): A crate for convenient parsing of network packets.
 - [nurtex-encrypt](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-encrypt): A crate containing the Minecraft TCP-connection encryption.
 - [nurtex-protocol](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-protocol): A crate for creating Minecraft TCP-connections and working with packets.
+
+
+# Examples
+
+All current examples can be found here: [browse](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex/examples)
+
+## Create a bot
+
+```rust
+use std::time::Duration;
+
+use nurtex::bot::{Bot, BotChatExt};
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+  // Создаём бота
+  let mut bot = Bot::create("nurtex_bot");
+
+  // Подключаем бота к серверу
+  bot.connect("localhost", 25565);
+
+  // Ждём немножко
+  tokio::time::sleep(Duration::from_secs(3)).await;
+
+  // Отправляем сообщение в чат
+  bot.chat_message("Привет, мир!").await?;
+
+  // Ожидаем окончания хэндла подключения
+  bot.wait_handle().await
+}
+```
+
+## Create a swarm
+
+```rust
+use nurtex::bot::Bot;
+use nurtex::swarm::{JoinDelay, Swarm};
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+  // Создаём рой
+  let mut swarm = Swarm::create();
+
+  // Добавляем ботов в рой
+  for i in 0..6 {
+    swarm.add_bot(Bot::create(format!("nurtex_bot_{}", i)));
+  }
+
+  // Запускаем ботов на сервер с фиксированной задержкой в 500мс
+  swarm.launch("localhost", 25565, JoinDelay::fixed(500)).await;
+
+  // Ждём завершения всех хэндлов ботов
+  swarm.wait_handles().await;
+
+  Ok(())
+}
+```
