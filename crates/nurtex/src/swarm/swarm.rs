@@ -2,9 +2,11 @@ use std::io::{self};
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use crate::bot::Bot;
+use crate::storage::Storage;
 use crate::swarm::{JoinDelay, Speedometer};
 
 /// Рой ботов
@@ -17,6 +19,9 @@ pub struct Swarm {
 
   /// Спидометр (опционально)
   speedometer: Option<Arc<Speedometer>>,
+
+  /// Общее хранилище данных
+  shared_storage: Arc<RwLock<Storage>>,
 }
 
 impl Swarm {
@@ -26,6 +31,7 @@ impl Swarm {
       bots: Vec::new(),
       handles: Vec::new(),
       speedometer: None,
+      shared_storage: Arc::new(RwLock::new(Storage::null())),
     }
   }
 
@@ -35,6 +41,7 @@ impl Swarm {
       bots: Vec::with_capacity(capacity),
       handles: Vec::with_capacity(capacity),
       speedometer: None,
+      shared_storage: Arc::new(RwLock::new(Storage::null())),
     }
   }
 
@@ -44,12 +51,20 @@ impl Swarm {
       bots: Vec::new(),
       handles: Vec::new(),
       speedometer: Some(speedometer),
+      shared_storage: Arc::new(RwLock::new(Storage::null())),
     }
   }
 
   /// Метод установки спидометра
-  pub fn set_speedometer(&mut self, speedometer: Arc<Speedometer>) {
+  pub fn set_speedometer(mut self, speedometer: Arc<Speedometer>) -> Self {
     self.speedometer = Some(speedometer);
+    self
+  }
+
+  /// Метод установки общего хранилища
+  pub fn set_shared_storage(mut self, storage: Arc<RwLock<Storage>>) -> Self {
+    self.shared_storage = storage;
+    self
   }
 
   /// Метод получения спидометра
@@ -59,6 +74,11 @@ impl Swarm {
     } else {
       None
     }
+  }
+
+  /// Метод получения общего хранилища
+  pub fn get_shared_storage(&self) -> Arc<RwLock<Storage>> {
+    Arc::clone(&self.shared_storage)
   }
 
   /// Последовательный for-each
@@ -91,18 +111,13 @@ impl Swarm {
 
   /// Метод добавления бота в рой
   pub fn add_bot(&mut self, bot: Bot) {
-    self.bots.push(Arc::new(bot));
-  }
-
-  /// Метод добавления `Arc` бота в рой
-  pub fn add_arc_bot(&mut self, bot: Arc<Bot>) {
-    self.bots.push(bot);
+    self.bots.push(Arc::new(bot.set_storage(Arc::clone(&self.shared_storage))));
   }
 
   /// Метод добавления нескольких ботов в рой
   pub fn add_bots(&mut self, bots: Vec<Bot>) {
     for bot in bots {
-      self.bots.push(Arc::new(bot));
+      self.bots.push(Arc::new(bot.set_storage(Arc::clone(&self.shared_storage))));
     }
   }
 
@@ -205,12 +220,13 @@ impl Swarm {
       bot.shutdown().await?;
     }
 
-    self.handles.clear();
-    self.bots.clear();
-
     if let Some(speedometer) = &self.speedometer {
       speedometer.stop();
     }
+
+    self.handles.clear();
+    self.bots.clear();
+    self.shared_storage.write().await.clear();
 
     Ok(())
   }
@@ -293,6 +309,32 @@ mod tests {
 
     swarm.launch("localhost", 25565, JoinDelay::fixed(200)).await;
     swarm.wait_handles().await;
+
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_shared_storage() -> io::Result<()> {
+    let mut swarm = Swarm::create_with_capacity(6);
+
+    for i in 0..6 {
+      swarm.add_bot(Bot::create(format!("nurtex_{}", i)));
+    }
+
+    swarm.launch("localhost", 25565, JoinDelay::fixed(200)).await;
+
+    for _ in 0..5 {
+      let storage = swarm.get_shared_storage();
+
+      let entities = {
+        let guard = storage.read().await;
+        guard.entities.clone()
+      };
+
+      println!("Сущности: {:?}", entities);
+
+      tokio::time::sleep(Duration::from_secs(3)).await;
+    }
 
     Ok(())
   }

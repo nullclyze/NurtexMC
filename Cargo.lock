@@ -525,6 +525,7 @@ dependencies = [
 name = "nurtex"
 version = "1.0.0"
 dependencies = [
+ "hashbrown",
  "nurtex-protocol",
  "rand 0.8.5",
  "tokio",

@@ -17,5 +17,6 @@ path = "src/lib.rs"
 [dependencies]
 tokio.workspace = true
 uuid.workspace = true
-nurtex-protocol.workspace = true
+hashbrown.workspace = true
 rand.workspace = true
+nurtex-protocol.workspace = true

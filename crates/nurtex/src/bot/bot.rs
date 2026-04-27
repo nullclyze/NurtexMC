@@ -2,6 +2,7 @@ use std::io::{Error, ErrorKind};
 use std::sync::Arc;
 use std::time::Duration;
 
+use hashbrown::HashMap;
 use nurtex_protocol::connection::address::convert_address;
 use nurtex_protocol::connection::utils::handle_encryption_request;
 use nurtex_protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
@@ -18,8 +19,10 @@ use tokio::task::JoinHandle;
 
 use crate::bot::capture::{capture_components, capture_connection};
 use crate::bot::plugins::BotPlugins;
-use crate::bot::{BotComponents, BotProfile, ClientInfo};
+use crate::bot::{BotComponents, BotProfile, ClientInfo, capture_storage};
+use crate::storage::Storage;
 use crate::swarm::Speedometer;
+use crate::world::Entity;
 
 /// Тип потокобезопасного подключения
 pub type BotConnection = Arc<RwLock<Option<NurtexConnection>>>;
@@ -45,6 +48,7 @@ pub struct Bot {
   components: Arc<RwLock<BotComponents>>,
   last_connection_params: Arc<Mutex<Option<(String, u16)>>>,
   last_packet_time: Arc<Mutex<std::time::Instant>>,
+  storage: Arc<RwLock<Storage>>,
 }
 
 impl Bot {
@@ -80,6 +84,7 @@ impl Bot {
       components: Arc::new(RwLock::new(BotComponents::default())),
       last_connection_params: Arc::new(Mutex::new(None)),
       last_packet_time: Arc::new(Mutex::new(std::time::Instant::now())),
+      storage: Arc::new(RwLock::new(Storage::null())),
     }
   }
 
@@ -168,6 +173,12 @@ impl Bot {
     self
   }
 
+  /// Метод установки хранилища данных
+  pub fn set_storage(mut self, storage: Arc<RwLock<Storage>>) -> Self {
+    self.storage = storage;
+    self
+  }
+
   /// Метод получения юзернейма
   pub fn username(&self) -> &str {
     &self.username
@@ -246,6 +257,7 @@ impl Bot {
     let writer_tx = Arc::clone(&self.writer_tx);
     let last_connection_params = Arc::clone(&self.last_connection_params);
     let last_packet_time = Arc::clone(&self.last_packet_time);
+    let storage = Arc::clone(&self.storage);
     let protocol_version = self.protocol_version;
     let host = server_host.into();
     let port = server_port;
@@ -268,6 +280,7 @@ impl Bot {
         reader_tx,
         writer_tx,
         last_packet_time,
+        storage,
         protocol_version,
         host,
         port,
@@ -287,6 +300,7 @@ impl Bot {
     reader_tx: PacketReader,
     writer_tx: PacketWriter,
     last_packet_time: Arc<Mutex<std::time::Instant>>,
+    storage: Arc<RwLock<Storage>>,
     protocol_version: i32,
     host: String,
     port: u16,
@@ -307,6 +321,7 @@ impl Bot {
         coonnection_timeout,
         &reader_tx,
         &last_packet_time,
+        &storage,
         protocol_version,
         &host,
         port,
@@ -345,6 +360,7 @@ impl Bot {
     coonnection_timeout: u64,
     reader_tx: &PacketReader,
     last_packet_time: &Arc<Mutex<std::time::Instant>>,
+    storage: &Arc<RwLock<Storage>>,
     protocol_version: i32,
     host: &str,
     port: u16,
@@ -558,9 +574,8 @@ impl Bot {
         ClientsidePlayPacket::Login(p) => {
           capture_components(&components, async |comp| {
             comp.entity_id = p.entity_id;
-            Ok(())
           })
-          .await?;
+          .await;
 
           if plugins.auto_respawn.enabled && p.enable_respawn_screen {
             tokio::time::sleep(Duration::from_millis(plugins.auto_respawn.respawn_delay)).await;
@@ -574,6 +589,78 @@ impl Bot {
             })
             .await?;
           }
+        }
+        ClientsidePlayPacket::SpawnEntity(p) => {
+          capture_storage(&storage, async |stor| {
+            stor.add_entity(
+              p.entity_id,
+              Entity {
+                entity_type: p.entity_type,
+                entity_uuid: p.entity_uuid,
+                position: p.position,
+                rotation: Rotation::from_angle(p.yaw_angle, p.pitch_angle),
+                velocity: p.velocity.to_vector3(),
+                ..Default::default()
+              },
+            );
+          })
+          .await;
+        }
+        ClientsidePlayPacket::RemoveEntities(p) => {
+          capture_storage(&storage, async |stor| {
+            for entity_id in p.entities {
+              stor.remove_entity(&entity_id);
+            }
+          })
+          .await;
+        }
+        ClientsidePlayPacket::EntityPositionSync(p) => {
+          capture_storage(&storage, async |stor| {
+            if let Some(entity) = stor.get_entity_mut(&p.entity_id) {
+              entity.position = p.position;
+              entity.rotation = p.rotation;
+              entity.velocity = p.velocity;
+              entity.on_ground = p.on_ground;
+            }
+          })
+          .await;
+        }
+        ClientsidePlayPacket::UpdateEntityPos(p) => {
+          capture_storage(&storage, async |stor| {
+            if let Some(entity) = stor.get_entity_mut(&p.entity_id) {
+              // entity.position.with_delta(p.delta_x, p.delta_y, p.delta_z);
+              entity.on_ground = p.on_ground;
+            }
+          })
+          .await;
+        }
+        ClientsidePlayPacket::UpdateEntityRot(p) => {
+          capture_storage(&storage, async |stor| {
+            if let Some(entity) = stor.get_entity_mut(&p.entity_id) {
+              entity.rotation = Rotation::from_angle(p.yaw_angle, p.pitch_angle);
+              entity.on_ground = p.on_ground;
+            }
+          })
+          .await;
+        }
+        ClientsidePlayPacket::UpdateEntityPosRot(p) => {
+          capture_storage(&storage, async |stor| {
+            if let Some(entity) = stor.get_entity_mut(&p.entity_id) {
+              // entity.position.with_delta(p.delta_x, p.delta_y, p.delta_z);
+              entity.rotation = Rotation::from_angle(p.yaw_angle, p.pitch_angle);
+              entity.on_ground = p.on_ground;
+            }
+          })
+          .await;
+        }
+        ClientsidePlayPacket::SetEntityVelocity(p) => {
+          capture_storage(&storage, async |stor| {
+            if let Some(entity) = stor.get_entity_mut(&p.entity_id) {
+              entity.position.with_velocity(p.velocity.to_vector3());
+              entity.velocity = Vector3::from_lp_vector3(p.velocity);
+            }
+          })
+          .await;
         }
         ClientsidePlayPacket::KeepAlive(p) => {
           capture_connection(&connection, async |conn| {
@@ -595,25 +682,22 @@ impl Bot {
           capture_components(&components, async |comp| {
             comp.health = p.health;
             comp.food = p.food;
-            Ok(())
           })
-          .await?;
+          .await;
         }
         ClientsidePlayPacket::SetExperience(p) => {
           capture_components(&components, async |comp| {
             comp.experience = p.experience;
-            Ok(())
           })
-          .await?;
+          .await;
         }
         ClientsidePlayPacket::PlayerPosition(p) => {
           capture_components(&components, async |comp| {
             comp.position = p.position;
             comp.velocity = p.velocity;
             comp.rotation = p.rotation;
-            Ok(())
           })
-          .await?;
+          .await;
 
           capture_connection(&connection, async |conn| {
             conn
@@ -625,9 +709,8 @@ impl Bot {
         ClientsidePlayPacket::PlayerRotation(p) => {
           capture_components(&components, async |comp| {
             comp.rotation = Rotation::new(p.yaw, p.pitch);
-            Ok(())
           })
-          .await?;
+          .await;
         }
         ClientsidePlayPacket::AddResourcePack(p) => {
           capture_connection(&connection, async |conn| {
@@ -679,16 +762,17 @@ impl Bot {
     *conn_guard = None;
     std::mem::drop(conn_guard);
 
-    self.clear().await
+    self.clear().await;
+
+    Ok(())
   }
 
   /// Метод очистки данных бота
-  pub async fn clear(&self) -> std::io::Result<()> {
+  pub async fn clear(&self) {
     capture_components(&self.components, async |comp| {
       *comp = BotComponents::default();
-      Ok(())
     })
-    .await
+    .await;
   }
 
   /// Метод отмены хэндла бота
@@ -727,6 +811,22 @@ impl Bot {
     }
   }
 
+  /// Метод получения опциональных сущностей из хранилища
+  pub fn try_get_entities(&self) -> Option<HashMap<i32, Entity>> {
+    match self.storage.try_read() {
+      Ok(g) => {
+        let mut entities = HashMap::with_capacity(g.entities.len());
+
+        for (entity_id, entity) in &g.entities {
+          entities.insert(*entity_id, entity.clone());
+        }
+
+        Some(entities)
+      }
+      Err(_) => None,
+    }
+  }
+
   /// Метод получения позиции бота
   pub async fn get_position(&self) -> Vector3 {
     let guard = self.components.read().await;
@@ -744,11 +844,24 @@ impl Bot {
     let guard = self.components.read().await;
     guard.health
   }
+
+  /// Метод получения всех сущностей из хранилища
+  pub async fn get_entities(&self) -> HashMap<i32, Entity> {
+    let guard = self.storage.read().await;
+    let mut entities = HashMap::with_capacity(guard.entities.len());
+
+    for (entity_id, entity) in &guard.entities {
+      entities.insert(*entity_id, entity.clone());
+    }
+
+    entities
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use std::io;
+  use std::time::Duration;
 
   use nurtex_protocol::connection::ClientsidePacket;
   use nurtex_protocol::packets::play::ClientsidePlayPacket;
@@ -820,5 +933,19 @@ mod tests {
         println!("Бот {} получил пакет: {:?}", bot.username(), packet);
       }
     }
+  }
+
+  #[tokio::test]
+  async fn test_storage() -> io::Result<()> {
+    let mut bot = Bot::create("nurtex_bot");
+
+    bot.connect("localhost", 25565);
+
+    for _ in 0..10 {
+      println!("Сущности: {:?}", bot.get_entities().await);
+      tokio::time::sleep(Duration::from_secs(3)).await;
+    }
+
+    Ok(())
   }
 }

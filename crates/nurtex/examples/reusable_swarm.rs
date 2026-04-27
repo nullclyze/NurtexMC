@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use nurtex::bot::{Bot, BotChatExt};
@@ -6,21 +5,15 @@ use nurtex::swarm::{JoinDelay, Swarm};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-  // Создаём рой и список ботов
+  // Создаём рой
   let mut swarm = Swarm::create();
-  let mut bots = Vec::new();
-
-  // Добавляем ботов в наш список
-  for i in 0..6 {
-    bots.push(Arc::new(Bot::create(format!("nurtex_bot_{}", i))));
-  }
 
   // Создаём цикл на 3 повторения
   for i in 0..3 {
-    // Добавляем наших ботов.
+    // Добавляем ботов в рой.
     // Важно: Нужно добавлять ботов каждый раз после `shutdown` (выключения роя)
-    for bot in &bots {
-      swarm.add_arc_bot(Arc::clone(bot));
+    for i in 0..6 {
+      swarm.add_bot(Bot::create(format!("nurtex_bot_{}", i)));
     }
 
     // Запускаем ботов на сервер с фиксированной задержкой в 200мс
