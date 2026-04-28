@@ -153,14 +153,6 @@ impl ConnectionReader {
     Ok(packet)
   }
 
-  /// Метод проверки активности TCP соединения
-  pub fn is_connection_alive(&self) -> bool {
-    match self.read_stream.peer_addr() {
-      Ok(_) => true,
-      Err(_) => false,
-    }
-  }
-
   /// Вспомогательный метод чтения `status` пакета
   pub async fn read_status_packet(&mut self) -> Option<ClientsideStatusPacket> {
     let compression_threshold = *self.compression_threshold.read().await;
@@ -322,16 +314,6 @@ impl NurtexConnection {
     };
 
     reader.try_read_packet()
-  }
-
-  /// Метод проверки активности TCP соединения
-  pub fn is_connection_alive(&self) -> bool {
-    let reader = match self.reader.try_lock() {
-      Ok(reader) => reader,
-      Err(_) => return true,
-    };
-
-    reader.is_connection_alive()
   }
 
   /// Вспомогательный метод чтения `status` пакета

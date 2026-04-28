@@ -14,7 +14,7 @@ use nurtex_protocol::packets::{
   play::ServersidePlayPacket,
 };
 use nurtex_protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
-use tokio::sync::{Mutex, RwLock, broadcast};
+use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::bot::capture::{capture_components, capture_connection};
@@ -46,8 +46,6 @@ pub struct Bot {
   writer_tx: PacketWriter,
   speedometer: Option<Arc<Speedometer>>,
   components: Arc<RwLock<BotComponents>>,
-  last_connection_params: Arc<Mutex<Option<(String, u16)>>>,
-  last_packet_time: Arc<Mutex<std::time::Instant>>,
   storage: Arc<RwLock<Storage>>,
 }
 
@@ -82,31 +80,25 @@ impl Bot {
       writer_tx: Arc::new(writer_tx),
       speedometer,
       components: Arc::new(RwLock::new(BotComponents::default())),
-      last_connection_params: Arc::new(Mutex::new(None)),
-      last_packet_time: Arc::new(Mutex::new(std::time::Instant::now())),
       storage: Arc::new(RwLock::new(Storage::null())),
     }
   }
 
   /// Метод запуска `reader` (выполняется автоматически при подключении бота)
-  pub fn run_reader(connection: BotConnection, reader_tx: PacketReader, last_packet_time: Arc<Mutex<std::time::Instant>>) -> JoinHandle<()> {
+  pub fn run_reader(connection: BotConnection, reader_tx: PacketReader) -> JoinHandle<()> {
     tokio::spawn(async move {
       // Может быть гонка условий с NurtexConnection, поэтому небольшая задержка нужна
       tokio::time::sleep(Duration::from_millis(500)).await;
 
       loop {
-        let (connected, connection_alive) = {
+        let connected = {
           let conn_guard = connection.read().await;
-          (conn_guard.is_some(), if let Some(conn) = conn_guard.as_ref() { conn.is_connection_alive() } else { false })
+          conn_guard.is_some()
         };
 
         if !connected {
           tokio::time::sleep(Duration::from_millis(100)).await;
           continue;
-        }
-
-        if !connection_alive {
-          return;
         }
 
         let packet_result = {
@@ -116,8 +108,6 @@ impl Bot {
 
         match packet_result {
           Ok(Some(packet)) => {
-            *last_packet_time.lock().await = std::time::Instant::now();
-
             if reader_tx.send(packet).is_err() {
               break;
             }
@@ -219,27 +209,6 @@ impl Bot {
     let _ = self.writer_tx.send(packet);
   }
 
-  /// Метод проверки активности TCP соединения
-  async fn is_connection_alive(connection: &BotConnection, last_packet_time: &Arc<Mutex<std::time::Instant>>) -> bool {
-    let conn_guard = match connection.try_read() {
-      Ok(g) => g,
-      Err(_) => return true,
-    };
-
-    if let Some(conn) = conn_guard.as_ref() {
-      if !conn.is_connection_alive() {
-        return false;
-      }
-
-      let last_time = *last_packet_time.lock().await;
-      let elapsed = last_time.elapsed();
-
-      elapsed < Duration::from_secs(15)
-    } else {
-      false
-    }
-  }
-
   /// Метод подключения бота к серверу
   pub fn connect(&mut self, server_host: impl Into<String>, server_port: u16) {
     self.handle = Some(self.connect_with_handle(server_host, server_port));
@@ -255,19 +224,10 @@ impl Bot {
     let coonnection_timeout = self.connection_timeout;
     let reader_tx = Arc::clone(&self.reader_tx);
     let writer_tx = Arc::clone(&self.writer_tx);
-    let last_connection_params = Arc::clone(&self.last_connection_params);
-    let last_packet_time = Arc::clone(&self.last_packet_time);
     let storage = Arc::clone(&self.storage);
     let protocol_version = self.protocol_version;
     let host = server_host.into();
     let port = server_port;
-
-    let last_params_clone = Arc::clone(&last_connection_params);
-    let host_clone = host.clone();
-
-    tokio::spawn(async move {
-      *last_params_clone.lock().await = Some((host_clone, port));
-    });
 
     tokio::spawn(async move {
       Self::connection_loop(
@@ -276,12 +236,11 @@ impl Bot {
         components,
         speedometer,
         plugins,
-        coonnection_timeout,
         reader_tx,
         writer_tx,
-        last_packet_time,
         storage,
         protocol_version,
+        coonnection_timeout,
         host,
         port,
       )
@@ -296,12 +255,11 @@ impl Bot {
     components: Arc<RwLock<BotComponents>>,
     speedometer: Option<Arc<Speedometer>>,
     plugins: BotPlugins,
-    coonnection_timeout: u64,
     reader_tx: PacketReader,
     writer_tx: PacketWriter,
-    last_packet_time: Arc<Mutex<std::time::Instant>>,
     storage: Arc<RwLock<Storage>>,
     protocol_version: i32,
+    coonnection_timeout: u64,
     host: String,
     port: u16,
   ) -> std::io::Result<()> {
@@ -309,7 +267,7 @@ impl Bot {
     let max_attempts = if plugins.auto_reconnect.enabled { plugins.auto_reconnect.max_attempts } else { 1 };
 
     loop {
-      let reader_handle = Self::run_reader(Arc::clone(&connection), Arc::clone(&reader_tx), Arc::clone(&last_packet_time));
+      let reader_handle = Self::run_reader(Arc::clone(&connection), Arc::clone(&reader_tx));
       let writer_handle = Self::run_writer(Arc::clone(&connection), Arc::clone(&writer_tx));
 
       let result = Self::spawn_connection(
@@ -318,11 +276,10 @@ impl Bot {
         &components,
         &speedometer,
         &plugins,
-        coonnection_timeout,
         &reader_tx,
-        &last_packet_time,
         &storage,
         protocol_version,
+        coonnection_timeout,
         &host,
         port,
       )
@@ -357,11 +314,10 @@ impl Bot {
     components: &Arc<RwLock<BotComponents>>,
     speedometer: &Option<Arc<Speedometer>>,
     plugins: &BotPlugins,
-    coonnection_timeout: u64,
     reader_tx: &PacketReader,
-    last_packet_time: &Arc<Mutex<std::time::Instant>>,
     storage: &Arc<RwLock<Storage>>,
     protocol_version: i32,
+    coonnection_timeout: u64,
     host: &str,
     port: u16,
   ) -> std::io::Result<()> {
@@ -387,7 +343,6 @@ impl Bot {
     };
 
     *connection.write().await = Some(conn);
-    *last_packet_time.lock().await = std::time::Instant::now();
 
     let profile_data = { profile.read().await.clone() };
     let username_for_speedometer = profile_data.username.clone();
@@ -546,28 +501,12 @@ impl Bot {
     };
 
     loop {
-      if !Self::is_connection_alive(&connection, &last_packet_time).await {
-        return Err(Error::new(ErrorKind::ConnectionReset, "The connection was reset by the server"));
-      }
-
-      // Тут таймаут нужен для того чтобы проверять активность подключения, ибо какие-то проблемы
-      // есть конкретнно в состоянии Play при кике / отключении бота от сервера, что на 1.21.10, что на 1.21.11
-      let packet = match tokio::time::timeout(Duration::from_millis(3000), packet_rx.recv()).await {
+      let packet = match tokio::time::timeout(Duration::from_millis(8000), packet_rx.recv()).await {
         Ok(Ok(ClientsidePacket::Play(play_packet))) => play_packet,
         Ok(Ok(_)) => continue,
-        Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
-          continue;
-        }
-        Ok(Err(broadcast::error::RecvError::Closed)) => {
-          return Err(Error::new(ErrorKind::ConnectionReset, "The connection was reset by the server"));
-        }
-        Err(_) => {
-          if !Self::is_connection_alive(&connection, &last_packet_time).await {
-            return Err(Error::new(ErrorKind::ConnectionReset, "The connection was reset by the server"));
-          }
-
-          continue;
-        }
+        Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
+        Ok(Err(broadcast::error::RecvError::Closed)) => return Err(Error::new(ErrorKind::ConnectionReset, "The connection was reset by the server")),
+        Err(_) => continue,
       };
 
       match packet {
