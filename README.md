@@ -46,6 +46,12 @@ All crates focus on:
 - [nurtex-protocol](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-protocol): A crate for creating Minecraft TCP-connections and working with packets.
 
 
+# Documentation
+
+**Русская:** [читать](https://github.com/NurtexMC/nurtex/tree/main/docs/RU.md)
+**English:** [read](https://github.com/NurtexMC/nurtex/tree/main/docs/EN.md)
+
+
 # Examples
 
 All current examples can be found here: [browse](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex/examples)
