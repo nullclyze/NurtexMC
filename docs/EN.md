@@ -15,11 +15,11 @@ Or type in the terminal:
 cargo add nurtex
 ```
 
-## First Program
+## First program
 
 Once the `nurtex` library has been successfully installed and included, you can move on to writing the **first** program.
 
-Here we'll write a simple **Minecraft** bot whose task will be **simply connecting** to a server (in this example, we'll connect to a local server using version 1.21.11).
+Here we'll write a simple **Minecraft** bot whose task will be **simply connecting** to a server (in this example, we'll connect to a local server using version `1.21.11`).
 
 **In the `main.rs` file:**
 ```rust
@@ -91,7 +91,7 @@ async fn main() -> std::io::Result<()> {
 }
 ```
 
-## Creating a Swarm
+## Creating a swarm
 
 The `nurtex` library allows you to create a swarm (army, group - it doesn't matter) of bots, allowing you to effectively work with several (2 or more) bots simultaneously. One of the features of a swarm is shared storage of world data: instead of using unique storage for each bot, a swarm consolidates all data in one place, thereby avoiding situations with insane RAM consumption.
 
@@ -125,7 +125,7 @@ async fn main() -> std::io::Result<()> {
 
 The `nurtex` library has certain **features**. With each update of this library, we try to add new capabilities that will make working with it easier. Here we will look at some of the available features.
 
-## Bot Plugins
+## Bot plugins
 
 The bot has built-in plugins that are used to **automatically perform** certain actions.
 
@@ -162,11 +162,11 @@ You can test the plugin's functionality by typing the following command in the c
 /kick nurtex_bot test
 ```
 
-## Swarm connection delay
+## Swarm join delay
 
-I decided not to stop at a simple static connection delay (`JoinDelay`) and made it as flexible as possible.
+I decided not to stop at a simple static join delay (`JoinDelay`) and made it as flexible as possible.
 
-Let's first look at several methods for creating a connection delay:
+Let's first look at several methods for creating a join delay:
 
 - `JoinDelay::fixed(delay)`: Fixed delay.
 - `JoinDelay::progressive_linear(delay, max_delay)`: Progressive linear delay.
@@ -174,7 +174,7 @@ Let's first look at several methods for creating a connection delay:
 - `JoinDelay::custom(func)`: Custom delay creation function.
 - ...
 
-Let's create a swarm using progressive linear connection delay:
+Let's create a swarm using progressive linear join delay:
 
 ```rust
 use nurtex::{Bot, JoinDelay, Swarm};
@@ -215,7 +215,7 @@ Waiting for 2500ms...
 nurtex_bot_5 connected
 ```
 
-## Swarm with a Speedometer
+## Swarm with a speedometer
 
 The speedometer is another feature of the `nurtex` library. It allows you to measure the speed at which bots from a swarm are launched.
 
@@ -283,8 +283,8 @@ Fixed speed: 2 b/s (boost: 1)
 Fixed speed: 2 b/s (boost: 0)
 New peak speed: 3 b/s
 Fixed speed: 3 b/s (boost: 1)
-New peak speed: Speed: 4 b/s
+New peak speed: 4 b/s
 Fixed speed: 4 b/s (boost: 1)
-New Peak Speed: 5 b/s
+New peak speed: 5 b/s
 Fixed speed: 5 b/s (boost: 1)
 ```
