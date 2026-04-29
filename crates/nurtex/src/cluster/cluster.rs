@@ -80,6 +80,15 @@ impl Cluster {
     }
   }
 
+  /// Метод запуска кластера и ожидания завершения хэндлов
+  pub async fn launch_and_wait(&mut self) -> std::io::Result<()> {
+    for swarm in &self.swarms {
+      self.handles.push(swarm.quiet_launch());
+    }
+
+    self.wait_finish().await
+  }
+
   /// Метод запуска опредлённого роя из кластера
   pub fn launch_swarm(&mut self, swarm_id: i32) {
     for (id, swarm) in self.swarms.iter().enumerate() {
