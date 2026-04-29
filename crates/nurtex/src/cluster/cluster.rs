@@ -100,6 +100,33 @@ impl Cluster {
     }
   }
 
+  /// Последовательный for-each
+  pub async fn for_each_consistent<F, Fut>(&self, f: F)
+  where
+    F: Fn(Arc<Swarm>) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    for swarm in &self.swarms {
+      f(Arc::clone(swarm)).await;
+    }
+  }
+
+  /// Параллельный for-each
+  pub fn for_each_parallel<F, Fut>(&self, f: F)
+  where
+    F: Fn(Arc<Swarm>) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+  {
+    let f = Arc::new(f);
+
+    for swarm in &self.swarms {
+      let f_clone = Arc::clone(&f);
+      let swarm_clone = Arc::clone(swarm);
+
+      tokio::spawn(f_clone(swarm_clone));
+    }
+  }
+
   /// Метод ожидания завершения всех хэндлов
   pub async fn wait_finish(&mut self) -> std::io::Result<()> {
     for handle in &mut self.handles {
