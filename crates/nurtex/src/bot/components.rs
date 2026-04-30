@@ -1,4 +1,4 @@
-use nurtex_protocol::types::{Experience, Rotation, Vector3};
+use crate::protocol::types::{Experience, Rotation, Vector3};
 
 /// Структура компонентов бота
 pub struct BotComponents {

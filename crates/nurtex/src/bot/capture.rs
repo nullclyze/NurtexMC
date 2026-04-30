@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use nurtex_protocol::connection::NurtexConnection;
 use tokio::sync::RwLock;
 
+use crate::protocol::connection::NurtexConnection;
 use crate::bot::BotComponents;
 use crate::storage::Storage;
 

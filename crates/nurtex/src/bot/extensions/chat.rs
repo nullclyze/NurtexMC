@@ -1,4 +1,5 @@
-use nurtex_protocol::{packets::play::ServersideChatMessage, types::AdditionalMessageInfo};
+use crate::protocol::packets::play::ServersideChatMessage;
+use crate::protocol::types::AdditionalMessageInfo;
 
 use crate::bot::{Bot, capture_connection};
 

@@ -1,4 +1,4 @@
-use nurtex_protocol::types::{Rotation, Vector3};
+use crate::protocol::types::{Rotation, Vector3};
 use uuid::Uuid;
 
 /// Сущность мира

@@ -7,3 +7,11 @@ pub mod world;
 pub use bot::Bot;
 pub use cluster::Cluster;
 pub use swarm::{JoinDelay, Swarm};
+
+pub mod protocol {
+  pub use nurtex_protocol::*;
+}
+
+pub mod proxy {
+  pub use nurtex_proxy::*;
+}

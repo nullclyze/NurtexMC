@@ -1,5 +1,5 @@
-use nurtex_protocol::packets::configuration::ServersideClientInformation;
-use nurtex_protocol::types::{AccurateHand, ChatMode, DisplayedSkinParts, ParticleStatus};
+use crate::protocol::packets::configuration::ServersideClientInformation;
+use crate::protocol::types::{AccurateHand, ChatMode, DisplayedSkinParts, ParticleStatus};
 
 /// Структура информации клиента
 #[derive(Debug, Clone, PartialEq, PartialOrd)]

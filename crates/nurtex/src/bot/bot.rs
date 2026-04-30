@@ -3,20 +3,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hashbrown::HashMap;
-use nurtex_protocol::connection::utils::handle_encryption_request;
-use nurtex_protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
-use nurtex_protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation, ServersideClientCommand};
-use nurtex_protocol::packets::{
+use tokio::sync::{RwLock, broadcast};
+use tokio::task::JoinHandle;
+
+use crate::proxy::Proxy;
+use crate::protocol::connection::utils::handle_encryption_request;
+use crate::protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
+use crate::protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation, ServersideClientCommand};
+use crate::protocol::packets::{
   configuration::{ClientsideConfigurationPacket, ServersideAcknowledgeFinishConfiguration, ServersideConfigurationPacket, ServersideKnownPacks},
   handshake::{ServersideGreet, ServersideHandshakePacket},
   login::{ClientsideLoginPacket, ServersideLoginAcknowledged, ServersideLoginPacket, ServersideLoginStart},
   play::ServersidePlayPacket,
 };
-use nurtex_protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
-use nurtex_proxy::Proxy;
-use tokio::sync::{RwLock, broadcast};
-use tokio::task::JoinHandle;
-
+use crate::protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
 use crate::bot::capture::{capture_components, capture_connection};
 use crate::bot::plugins::BotPlugins;
 use crate::bot::{BotComponents, BotProfile, ClientInfo, capture_storage};
@@ -467,7 +467,7 @@ impl Bot {
         ClientsideConfigurationPacket::KeepAlive(p) => {
           capture_connection(&connection, async |conn| {
             conn
-              .write_configuration_packet(ServersideConfigurationPacket::KeepAlive(nurtex_protocol::packets::configuration::MultisideKeepAlive {
+              .write_configuration_packet(ServersideConfigurationPacket::KeepAlive(crate::protocol::packets::configuration::MultisideKeepAlive {
                 id: p.id,
               }))
               .await
@@ -477,7 +477,7 @@ impl Bot {
         ClientsideConfigurationPacket::Ping(p) => {
           capture_connection(&connection, async |conn| {
             conn
-              .write_configuration_packet(ServersideConfigurationPacket::Pong(nurtex_protocol::packets::configuration::ServersidePong { id: p.id }))
+              .write_configuration_packet(ServersideConfigurationPacket::Pong(crate::protocol::packets::configuration::ServersidePong { id: p.id }))
               .await
           })
           .await?;
@@ -503,7 +503,7 @@ impl Bot {
           capture_connection(&connection, async |conn| {
             conn
               .write_configuration_packet(ServersideConfigurationPacket::ResourcePackResponse(
-                nurtex_protocol::packets::configuration::ServersideResourcePackResponse {
+                crate::protocol::packets::configuration::ServersideResourcePackResponse {
                   uuid: p.uuid,
                   state: ResourcePackState::Accepted,
                 },
@@ -638,7 +638,7 @@ impl Bot {
         ClientsidePlayPacket::KeepAlive(p) => {
           capture_connection(&connection, async |conn| {
             conn
-              .write_play_packet(ServersidePlayPacket::KeepAlive(nurtex_protocol::packets::play::MultisideKeepAlive { id: p.id }))
+              .write_play_packet(ServersidePlayPacket::KeepAlive(crate::protocol::packets::play::MultisideKeepAlive { id: p.id }))
               .await
           })
           .await?;
@@ -646,7 +646,7 @@ impl Bot {
         ClientsidePlayPacket::Ping(p) => {
           capture_connection(&connection, async |conn| {
             conn
-              .write_play_packet(ServersidePlayPacket::Pong(nurtex_protocol::packets::play::ServersidePong { id: p.id }))
+              .write_play_packet(ServersidePlayPacket::Pong(crate::protocol::packets::play::ServersidePong { id: p.id }))
               .await
           })
           .await?;
@@ -688,7 +688,7 @@ impl Bot {
         ClientsidePlayPacket::AddResourcePack(p) => {
           capture_connection(&connection, async |conn| {
             conn
-              .write_play_packet(ServersidePlayPacket::ResourcePackResponse(nurtex_protocol::packets::play::ServersideResourcePackResponse {
+              .write_play_packet(ServersidePlayPacket::ResourcePackResponse(crate::protocol::packets::play::ServersideResourcePackResponse {
                 uuid: p.uuid,
                 state: ResourcePackState::Accepted,
               }))
@@ -836,8 +836,8 @@ mod tests {
   use std::io;
   use std::time::Duration;
 
-  use nurtex_protocol::connection::ClientsidePacket;
-  use nurtex_protocol::packets::play::ClientsidePlayPacket;
+  use crate::protocol::connection::ClientsidePacket;
+  use crate::protocol::packets::play::ClientsidePlayPacket;
   use nurtex_proxy::Proxy;
 
   use crate::bot::plugins::{AutoReconnectPlugin, AutoRespawnPlugin, BotPlugins};
