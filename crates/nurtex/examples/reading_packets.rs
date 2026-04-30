@@ -1,6 +1,6 @@
 use nurtex::bot::Bot;
-use nurtex_protocol::connection::ClientsidePacket;
-use nurtex_protocol::packets::play::ClientsidePlayPacket;
+use nurtex::protocol::connection::ClientsidePacket;
+use nurtex::protocol::packets::play::ClientsidePlayPacket;
 
 #[tokio::main]
 async fn main() {

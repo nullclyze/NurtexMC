@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
-use crate::protocol::connection::NurtexConnection;
 use crate::bot::BotComponents;
+use crate::protocol::connection::NurtexConnection;
 use crate::storage::Storage;
 
 /// Функция временного захвата подключения

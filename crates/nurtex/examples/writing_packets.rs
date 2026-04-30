@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use nurtex::bot::Bot;
-use nurtex_protocol::packets::play::{ServersidePlayPacket, ServersideSwingArm};
-use nurtex_protocol::types::RelativeHand;
+use nurtex::protocol::packets::play::{ServersidePlayPacket, ServersideSwingArm};
+use nurtex::protocol::types::RelativeHand;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {

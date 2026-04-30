@@ -6,7 +6,9 @@ use hashbrown::HashMap;
 use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 
-use crate::proxy::Proxy;
+use crate::bot::capture::{capture_components, capture_connection};
+use crate::bot::plugins::BotPlugins;
+use crate::bot::{BotComponents, BotProfile, ClientInfo, capture_storage};
 use crate::protocol::connection::utils::handle_encryption_request;
 use crate::protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
 use crate::protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation, ServersideClientCommand};
@@ -17,9 +19,7 @@ use crate::protocol::packets::{
   play::ServersidePlayPacket,
 };
 use crate::protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
-use crate::bot::capture::{capture_components, capture_connection};
-use crate::bot::plugins::BotPlugins;
-use crate::bot::{BotComponents, BotProfile, ClientInfo, capture_storage};
+use crate::proxy::Proxy;
 use crate::storage::Storage;
 use crate::swarm::Speedometer;
 use crate::world::Entity;
