@@ -9,12 +9,12 @@ async fn main() -> std::io::Result<()> {
   // Создаём список роев
   let mut swarms = Vec::new();
 
-  // Создаём 3 роя
+  // Создаём цикл на 3 повторения
   for s_ind in 0..3 {
     // Создаём рой
     let mut swarm = Swarm::create().set_join_delay(JoinDelay::fixed(1000)).bind("localhost", 25565);
 
-    // Создаём 2 бота
+    // Создаём цикл на 2 повторения
     for b_ind in 0..2 {
       // Создаём бота и добавляем его в рой
       swarm.add_bot(Bot::create(format!("nurtex_{}_{}", s_ind, b_ind)));
@@ -33,13 +33,10 @@ async fn main() -> std::io::Result<()> {
   // Ждём немножко
   tokio::time::sleep(Duration::from_secs(5)).await;
 
-  // Проходимся параллельно по всем роям
-  cluster.for_each_parallel(async |swarm| {
-    // Проходимся параллельно по всем ботам
-    swarm.for_each_parallel(async |bot| {
-      // Отправляем в чат сообщение
-      let _ = bot.chat_message(format!("Привет, я {}!", bot.username())).await;
-    });
+  // Проходимся параллельно по всем ботам из всех роев
+  cluster.for_each_bots_parallel(async |bot| {
+    // Отправляем сообщение в чат и игнорируем возможные ошибки
+    let _ = bot.chat_message(format!("Привет, я {}!", bot.username())).await;
   });
 
   // Внось ждём немножко
