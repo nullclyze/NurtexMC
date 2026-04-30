@@ -1,14 +1,15 @@
 use std::fmt::Debug;
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Error, ErrorKind};
 use std::sync::Arc;
 
 use nurtex_encrypt::{AesDecryptor, AesEncryptor};
+use nurtex_proxy::Proxy;
+use nurtex_proxy::result::ProxyResult;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{Mutex, RwLock};
 
-use crate::connection::address::NurtexAddr;
 use crate::connection::reader::{deserialize_packet, read_raw_packet, try_read_raw_packet};
 use crate::connection::writer::{serialize_packet, write_raw_packet};
 use crate::packets::{
@@ -245,9 +246,23 @@ impl ConnectionWriter {
 
 impl NurtexConnection {
   /// Метод создания нового подключения
-  pub async fn new(address: &NurtexAddr) -> io::Result<Self> {
-    let stream = TcpStream::connect(address.unpack()).await?;
+  pub async fn new(server_host: impl Into<String>, server_port: u16) -> io::Result<Self> {
+    let stream = TcpStream::connect(format!("{}:{}", server_host.into(), server_port)).await?;
     stream.set_nodelay(true)?;
+    Self::new_from_stream(stream).await
+  }
+
+  /// Метод создания нового подключения с SOCKS5 прокси
+  pub async fn new_with_proxy(server_host: impl Into<String>, server_port: u16, proxy: &Proxy) -> io::Result<Self> {
+    proxy.bind(server_host.into(), server_port);
+
+    let stream = match proxy.connect().await {
+      ProxyResult::Success(s) => s,
+      ProxyResult::Failed(e) => return Err(Error::new(ErrorKind::NotConnected, e.text())),
+    };
+
+    stream.set_nodelay(true)?;
+
     Self::new_from_stream(stream).await
   }
 

@@ -527,6 +527,7 @@ version = "1.0.0"
 dependencies = [
  "hashbrown",
  "nurtex-protocol",
+ "nurtex-proxy",
  "rand 0.8.5",
  "tokio",
  "uuid",
@@ -572,11 +573,20 @@ dependencies = [
  "nurtex-codec",
  "nurtex-derive",
  "nurtex-encrypt",
+ "nurtex-proxy",
  "once_cell",
  "serde_json",
  "tokio",
  "tokio-util",
  "uuid",
+]
+
+[[package]]
+name = "nurtex-proxy"
+version = "1.0.0"
+dependencies = [
+ "bytes",
+ "tokio",
 ]
 
 [[package]]

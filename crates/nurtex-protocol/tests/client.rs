@@ -2,7 +2,6 @@
 mod tests {
   use std::io;
 
-  use nurtex_protocol::connection::address::convert_address;
   use nurtex_protocol::connection::utils::handle_encryption_request;
   use nurtex_protocol::connection::{ConnectionState, NurtexConnection};
   use nurtex_protocol::packets::configuration::{
@@ -16,9 +15,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_client() -> io::Result<()> {
-    let addr = convert_address("localhost:25565").unwrap();
-
-    let conn = match NurtexConnection::new(&addr).await {
+    let conn = match NurtexConnection::new("localhost", 25565).await {
       Ok(c) => c,
       Err(_) => return Ok(()),
     };
@@ -26,8 +23,8 @@ mod tests {
     conn
       .write_handshake_packet(ServersideHandshakePacket::Greet(ServersideGreet {
         protocol_version: 774,
-        server_host: addr.get_ip(),
-        server_port: addr.get_port(),
+        server_host: "localhost".to_string(),
+        server_port: 25565,
         intention: ClientIntention::Login,
       }))
       .await?;

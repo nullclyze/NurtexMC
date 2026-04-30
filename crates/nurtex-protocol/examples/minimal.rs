@@ -1,6 +1,5 @@
 use std::io;
 
-use nurtex_protocol::connection::address::convert_address;
 use nurtex_protocol::connection::utils::handle_encryption_request;
 use nurtex_protocol::connection::{ConnectionState, NurtexConnection};
 use nurtex_protocol::packets::configuration::{
@@ -14,11 +13,11 @@ use nurtex_protocol::types::{AccurateHand, ChatMode, ClientIntention, DisplayedS
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-  // Конвертируем адрес сервера
-  let addr = convert_address("localhost:25565").unwrap();
+  let target_host = "locahost".to_string();
+  let target_port = 25565;
 
   // Создаём подключение (состояние Handshake)
-  let conn = match NurtexConnection::new(&addr).await {
+  let conn = match NurtexConnection::new(&target_host, 25565).await {
     Ok(c) => c,
     Err(_) => return Ok(()),
   };
@@ -26,9 +25,9 @@ async fn main() -> io::Result<()> {
   // Отправляем привестствие
   conn
     .write_handshake_packet(ServersideHandshakePacket::Greet(ServersideGreet {
-      protocol_version: 774,      // Версия 1.21.11
-      server_host: addr.get_ip(), // Тут рекомендуется указывать имя хоста а не IP-адрес
-      server_port: addr.get_port(),
+      protocol_version: 774, // Версия 1.21.11
+      server_host: target_host,
+      server_port: target_port,
       intention: ClientIntention::Login,
     }))
     .await?;

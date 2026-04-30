@@ -1,0 +1,19 @@
+[package]
+name = "nurtex-proxy"
+description = "Library for creating connections via SOCKS5 proxy."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/nurtex-proxy/latest/"
+readme = "README.md"
+keywords = ["proxy", "socks5"]
+categories = ["asynchronous"]
+
+[lib]
+name = "nurtex_proxy"
+path = "src/lib.rs"
+
+[dependencies]
+tokio.workspace = true
+bytes.workspace = true

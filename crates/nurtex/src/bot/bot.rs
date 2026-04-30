@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hashbrown::HashMap;
-use nurtex_protocol::connection::address::convert_address;
 use nurtex_protocol::connection::utils::handle_encryption_request;
 use nurtex_protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
 use nurtex_protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation, ServersideClientCommand};
@@ -14,6 +13,7 @@ use nurtex_protocol::packets::{
   play::ServersidePlayPacket,
 };
 use nurtex_protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
+use nurtex_proxy::Proxy;
 use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 
@@ -39,6 +39,7 @@ pub struct Bot {
   pub connection: BotConnection,
   protocol_version: i32,
   connection_timeout: u64,
+  proxy: Arc<RwLock<Option<Proxy>>>,
   plugins: BotPlugins,
   username: String,
   handle: Option<JoinHandle<core::result::Result<(), std::io::Error>>>,
@@ -52,16 +53,21 @@ pub struct Bot {
 impl Bot {
   /// Метод создания нового бота
   pub fn create(username: impl Into<String>) -> Self {
-    Self::create_with_options(username, 45, 45, None)
+    Self::create_with_options(username, 45, 45, None, None)
+  }
+
+  /// Метод создания нового бота
+  pub fn create_with_proxy(username: impl Into<String>, proxy: Proxy) -> Self {
+    Self::create_with_options(username, 45, 45, None, Some(proxy))
   }
 
   /// Метод создания нового бота со спидометром
   pub fn create_with_speedometer(username: impl Into<String>, speedometer: Arc<Speedometer>) -> Self {
-    Self::create_with_options(username, 45, 45, Some(speedometer))
+    Self::create_with_options(username, 45, 45, Some(speedometer), None)
   }
 
   /// Метод создания нового бота с заданными опциями
-  pub fn create_with_options(username: impl Into<String>, reader_capacity: usize, writer_capacity: usize, speedometer: Option<Arc<Speedometer>>) -> Self {
+  pub fn create_with_options(username: impl Into<String>, reader_capacity: usize, writer_capacity: usize, speedometer: Option<Arc<Speedometer>>, proxy: Option<Proxy>) -> Self {
     let (reader_tx, _) = broadcast::channel(reader_capacity);
     let (writer_tx, _) = broadcast::channel(writer_capacity);
 
@@ -74,6 +80,7 @@ impl Bot {
       plugins: BotPlugins::default(),
       protocol_version: 774,
       connection_timeout: 14000,
+      proxy: Arc::new(RwLock::new(proxy)),
       username: name,
       handle: None,
       reader_tx: Arc::new(reader_tx),
@@ -151,6 +158,12 @@ impl Bot {
     self
   }
 
+  /// Метод установки спидометра
+  pub fn set_speedometer(mut self, speedometer: Arc<Speedometer>) -> Self {
+    self.speedometer = Some(speedometer);
+    self
+  }
+
   /// Метод установки версии протокола
   pub fn set_protocol_version(mut self, protocol_version: i32) -> Self {
     self.protocol_version = protocol_version;
@@ -160,6 +173,12 @@ impl Bot {
   /// Метод установки таймаута подключения
   pub fn set_connection_timeout(mut self, timeout: u64) -> Self {
     self.connection_timeout = timeout;
+    self
+  }
+
+  /// Метод установки SOCKS5 прокси
+  pub fn set_proxy(mut self, proxy: Proxy) -> Self {
+    self.proxy = Arc::new(RwLock::new(Some(proxy)));
     self
   }
 
@@ -177,6 +196,11 @@ impl Bot {
   /// Метод получения профиля бота
   pub fn get_profile(&self) -> Arc<RwLock<BotProfile>> {
     Arc::clone(&self.profile)
+  }
+
+  /// Метод получения прокси бота
+  pub fn get_proxy(&self) -> Arc<RwLock<Option<Proxy>>> {
+    Arc::clone(&self.proxy)
   }
 
   /// Вспомогательный метод подписки на слушание пакетов
@@ -222,6 +246,7 @@ impl Bot {
     let speedometer = self.speedometer.clone();
     let plugins = self.plugins.clone();
     let coonnection_timeout = self.connection_timeout;
+    let proxy = Arc::clone(&self.proxy);
     let reader_tx = Arc::clone(&self.reader_tx);
     let writer_tx = Arc::clone(&self.writer_tx);
     let storage = Arc::clone(&self.storage);
@@ -241,6 +266,7 @@ impl Bot {
         storage,
         protocol_version,
         coonnection_timeout,
+        proxy,
         host,
         port,
       )
@@ -260,6 +286,7 @@ impl Bot {
     storage: Arc<RwLock<Storage>>,
     protocol_version: i32,
     coonnection_timeout: u64,
+    proxy: Arc<RwLock<Option<Proxy>>>,
     host: String,
     port: u16,
   ) -> std::io::Result<()> {
@@ -280,6 +307,7 @@ impl Bot {
         &storage,
         protocol_version,
         coonnection_timeout,
+        &proxy,
         &host,
         port,
       )
@@ -318,6 +346,7 @@ impl Bot {
     storage: &Arc<RwLock<Storage>>,
     protocol_version: i32,
     coonnection_timeout: u64,
+    proxy: &Arc<RwLock<Option<Proxy>>>,
     host: &str,
     port: u16,
   ) -> std::io::Result<()> {
@@ -330,16 +359,21 @@ impl Bot {
       *conn_guard = None;
     }
 
-    let Some(addr) = convert_address(format!("{}:{}", host, port)) else {
-      return Err(Error::new(ErrorKind::AddrNotAvailable, "Failed to convert target address"));
-    };
-
-    let conn = match tokio::time::timeout(Duration::from_millis(coonnection_timeout), NurtexConnection::new(&addr)).await {
-      Ok(result) => match result {
-        Ok(c) => c,
-        Err(err) => return Err(err),
+    let conn = match proxy.read().await.as_ref() {
+      Some(proxy) => match tokio::time::timeout(Duration::from_millis(coonnection_timeout), NurtexConnection::new_with_proxy(host, port, proxy)).await {
+        Ok(result) => match result {
+          Ok(c) => c,
+          Err(err) => return Err(err),
+        },
+        Err(_) => return Err(Error::new(ErrorKind::TimedOut, "Failed to receive a response from the server within the specified timeout")),
       },
-      Err(_) => return Err(Error::new(ErrorKind::TimedOut, "Failed to receive a response from the server within the specified timeout")),
+      None => match tokio::time::timeout(Duration::from_millis(coonnection_timeout), NurtexConnection::new(host, port)).await {
+        Ok(result) => match result {
+          Ok(c) => c,
+          Err(err) => return Err(err),
+        },
+        Err(_) => return Err(Error::new(ErrorKind::TimedOut, "Failed to receive a response from the server within the specified timeout")),
+      },
     };
 
     *connection.write().await = Some(conn);
@@ -804,6 +838,7 @@ mod tests {
 
   use nurtex_protocol::connection::ClientsidePacket;
   use nurtex_protocol::packets::play::ClientsidePlayPacket;
+  use nurtex_proxy::Proxy;
 
   use crate::bot::plugins::{AutoReconnectPlugin, AutoRespawnPlugin, BotPlugins};
   use crate::bot::{Bot, BotChatExt};
@@ -880,11 +915,29 @@ mod tests {
 
     bot.connect("localhost", 25565);
 
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
     for _ in 0..10 {
       println!("Сущности: {:?}", bot.get_entities().await);
       tokio::time::sleep(Duration::from_secs(3)).await;
     }
 
     Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_bot_with_proxy() -> io::Result<()> {
+    let proxy = Proxy::new("212.58.132.5:1080"); // Публичный прокси
+    let mut bot = Bot::create_with_proxy("l7jqw8d5", proxy);
+
+    bot.connect("hub.holyworld.ru", 25565);
+
+    let mut reader = bot.subscribe_to_reader();
+
+    loop {
+      if let Ok(ClientsidePacket::Play(packet)) = reader.recv().await {
+        println!("Бот {} получил пакет: {:?}", bot.username(), packet);
+      }
+    }
   }
 }
