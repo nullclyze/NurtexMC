@@ -6,7 +6,7 @@ You need to add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-nurtex = "1.0.0" # May be a different version
+nurtex = "1.1.0" # May be a different version
 ```
 
 Or type in the terminal:
@@ -345,88 +345,5 @@ async fn main() -> std::io::Result<()> {
       }
     }
   }
-}
-```
-
-## Multi-swarm
-
-Here we'll look at what a **multi-swarm** is, how to create one, what it might be used for, and what its nuances are.
-
-A **multi-swarm** is not just an object, but a small system containing several swarms of bots.
-
-What a **multi-swarm** can be useful for:
-
-- Simultaneous launch of swarms on multiple servers.
-- Distributing bots into groups, where each group has its own world.
-- Other more complex applications.
-
-What are the possible nuances of a **multi-swarm**:
-
-- Higher RAM consumption (since all swarms have unique storage).
-- More complex control over bots.
-
-Now let's create our multi-swarm:
-
-```rust
-use std::sync::Arc;
-use std::time::Duration;
-
-use nurtex::{JoinDelay, Swarm};
-use nurtex::bot::{Bot, BotChatExt};
-use tokio::sync::RwLock;
-
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-  // Create a list of swarms
-  let mut swarms = Vec::new();
-
-  // Create 3 swarms of 6 bots each
-  for swarm_i in 0..3 {
-    // Create a swarm
-    let mut swarm = Swarm::create();
-
-    // Add bots to the swarm
-    for bot_i in 0..6 {
-      swarm.add_bot(Bot::create(format!("nurtex_{}_{}", swarm_i, bot_i)));
-    }
-
-    // Add an Arc + RwLock swarm to the list
-    swarms.push(Arc::new(RwLock::new(swarm)));
-  }
-
-  // Loop through all existing swarms
-  for swarm in &swarms {
-    // Clone a swarm for a specific task
-    let swarm_clone = Arc::clone(&swarm);
-
-    // Spawn a separate task
-    tokio::spawn(async move {
-      // You can specify different servers here, but for this example we'll only use the local one
-      swarm_clone.write().await.launch("localhost", 25565, JoinDelay::fixed(250)).await;
-
-      // Wait 4 seconds
-      tokio::time::sleep(Duration::from_secs(4)).await;
-
-      // Send a chat message from all bots in the current swarm
-      swarm_clone.read().await.for_each_parallel(async |bot| {
-        // Ignore possible errors
-        let _ = bot.chat_message(format!("Hello, I'm {}!", bot.username())).await;
-      });
-    });
-  }
-
-  // Wait 20 seconds
-  tokio::time::sleep(Duration::from_secs(20)).await;
-
-  // Loop through all swarms again and shut them down
-  for swarm in swarms {
-    // Spawn a separate task
-    tokio::spawn(async move {
-      // Ignore possible errors
-      let _ = swarm.write().await.shutdown().await;
-    });
-  }
-
-  Ok(())
 }
 ```

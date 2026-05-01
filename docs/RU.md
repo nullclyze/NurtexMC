@@ -6,7 +6,7 @@
 
 ```toml
 [dependencies]
-nurtex = "1.0.0" # Может быть другая версия
+nurtex = "1.1.0" # Может быть другая версия
 ```
 
 Или написать в терминале:
@@ -347,90 +347,5 @@ async fn main() -> std::io::Result<()> {
       }
     }
   }
-}
-```
-
-
-## Мульти-рой
-
-Здесь мы рассмотрим что такое **мульти-рой**, как его создать, для чего он может быть нужен, какие у него есть нюансы.
-
-**Мульти-рой** - это не просто объект, а небольшая система, содержащая в себе несколько роев ботов. 
-
-Для чего может быть полезен **мульти-рой**:
-
-- Одновременный запуск роев сразу на несколько серверов.
-- Распределения ботов на группы, где у каждой группы свой мир.
-- Прочие более сложные применения.
-
-Какие могут быть нюансы у **мульти-роя**:
-
-- Большее потребление оперативной памяти (посколько хранилища у всех роев уникальные).
-- Более сложный контроль над ботами.
-
-Давай теперь создадим наш мульти-рой:
-
-```rust
-use std::sync::Arc;
-use std::time::Duration;
-
-use nurtex::{JoinDelay, Swarm};
-use nurtex::bot::{Bot, BotChatExt};
-use tokio::sync::RwLock;
-
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-  // Создаём список роев
-  let mut swarms = Vec::new();
-
-  // Создадим 3 роя по 6 ботов
-  for swarm_i in 0..3 {
-    // Создаём рой
-    let mut swarm = Swarm::create();
-
-    // Добавляем ботов в рой
-    for bot_i in 0..6 {
-      swarm.add_bot(Bot::create(format!("nurtex_{}_{}", swarm_i, bot_i)));
-    }
-
-    // Добавляем Arc + RwLock рой в список
-    swarms.push(Arc::new(RwLock::new(swarm)));
-  }
-
-  // Проходимся по всем существующим роям
-  for swarm in &swarms {
-    // Клонируем рой для отдельной задачи
-    let swarm_clone = Arc::clone(&swarm);
-
-    // Спавним отдельную задачу
-    tokio::spawn(async move {
-      // Здесь можно указывать разные сервера, но для примера мы берём только локальный
-      swarm_clone.write().await.launch("localhost", 25565, JoinDelay::fixed(250)).await;
-      
-      // Ждём 4 секунды
-      tokio::time::sleep(Duration::from_secs(4)).await;
-
-      // Отправляем сообщение в чат от всех ботов из текущего роя
-      
-      swarm_clone.read().await.for_each_parallel(async |bot| {
-        // Игнорируем возможные ошибки
-        let _ = bot.chat_message(format!("Привет, я {}!", bot.username())).await;
-      });
-    });
-  }
-
-  // Ждём 20 секунд
-  tokio::time::sleep(Duration::from_secs(20)).await;
-
-  // Вновь проходимся по всем роям и выключаем их
-  for swarm in swarms {
-    // Спавним отдельную задачу
-    tokio::spawn(async move {
-      // Игнорируем возможные ошибки
-      let _ = swarm.write().await.shutdown().await;
-    });
-  }
-
-  Ok(())
 }
 ```

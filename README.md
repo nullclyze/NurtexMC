@@ -67,9 +67,8 @@ All current examples can be found here: [browse](https://github.com/NurtexMC/nur
 This is one of the simplest examples of creating and connecting a bot.
 
 ```rust
-use std::time::Duration;
-
-use nurtex::bot::{Bot, BotChatExt};
+use nurtex::Bot;
+use nurtex::bot::BotChatExt;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -80,7 +79,7 @@ async fn main() -> std::io::Result<()> {
   bot.connect("localhost", 25565);
 
   // Ждём немножко
-  tokio::time::sleep(Duration::from_secs(3)).await;
+  tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
   // Отправляем сообщение в чат
   bot.chat_message("Привет, мир!").await?;
@@ -96,25 +95,62 @@ async fn main() -> std::io::Result<()> {
 In this example, you can see a simple implementation of a bot swarm.
 
 ```rust
-use nurtex::bot::Bot;
-use nurtex::swarm::{JoinDelay, Swarm};
+use nurtex::{Bot, JoinDelay, Swarm};
+
+#[tokio::main]
+async fn main() {
+  // Создаём список ботов
+  let mut bots = Vec::new();
+
+  // Добавляем ботов в наш список
+  for i in 0..6 {
+    bots.push(Bot::create(format!("nurtex_bot_{}", i)));
+  }
+
+  // Создаём рой и запускаем его на сервер
+  Swarm::create()
+    .with_bots(bots)
+    .set_join_delay(JoinDelay::fixed(500))
+    .bind("localhost", 25565)
+    .launch_and_wait()
+    .await
+}
+```
+
+
+## Create a cluster
+
+Here you can see a minimal example of creating a cluster.
+
+```rust
+use nurtex::{Bot, Cluster, JoinDelay, Swarm};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-  // Создаём рой
-  let mut swarm = Swarm::create();
+  // Создаём список роев
+  let mut swarms = Vec::new();
 
-  // Добавляем ботов в рой
-  for i in 0..6 {
-    swarm.add_bot(Bot::create(format!("nurtex_bot_{}", i)));
+  // Создаём цикл на 3 повторения
+  for s_ind in 0..3 {
+    // Создаём рой
+    let mut swarm = Swarm::create()
+      .set_join_delay(JoinDelay::fixed(1000))
+      .bind("localhost", 25565);
+
+    // Создаём цикл на 2 повторения
+    for b_ind in 0..2 {
+      // Создаём бота и добавляем его в рой
+      swarm.add_bot(Bot::create(format!("nurtex_{}_{}", s_ind, b_ind)));
+    }
+
+    // Добавляем рой в список
+    swarms.push(swarm);
   }
 
-  // Запускаем ботов на сервер с фиксированной задержкой в 500мс
-  swarm.launch("localhost", 25565, JoinDelay::fixed(500)).await;
-
-  // Ждём завершения всех хэндлов ботов
-  swarm.wait_handles().await;
-
-  Ok(())
+  // Создаём кластер и сразу запускаем его
+  Cluster::create()
+    .with_swarms(swarms)
+    .launch_and_wait()
+    .await
 }
 ```
