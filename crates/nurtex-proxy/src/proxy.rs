@@ -11,32 +11,38 @@ use crate::ProxyAuth;
 use crate::error::{ErrorName, ProxyError};
 use crate::result::ProxyResult;
 
-const PROXY_VERSION: u8 = 0x05;
-const CMD_CONNECT: u8 = 0x01;
-const ATYP_IPV4: u8 = 0x01;
-const ATYP_IPV6: u8 = 0x04;
-const ATYP_DOMAIN: u8 = 0x03;
-
-/// Структура SOCKS5 прокси.
+/// Структура SOCKS5 / SOCKS4 прокси.
 ///
 /// ## Примеры
 ///
 /// ```rust, ignore
-/// use nurtex_proxy::{Proxy, ProxyAuth};
+/// use nurtex_proxy::{Proxy, ProxyAuth, ProxyType};
 ///
-/// // Прокси без авторизации
-/// let proxy = Proxy::new("PROXY_IP:PROXY_PORT");
+/// // Пример SOCKS5 прокси без авторизации
+/// let proxy = Proxy::new("PROXY_IP:PROXY_PORT", ProxyType::Socks5);
 ///
-/// // Прокси с авторизацией
+/// // Пример SOCKS5 с авторизацией
 /// let auth = ProxyAuth::new("USERNAME", "PASSWORD");
-/// let proxy = Proxy::new_with_auth("PROXY_IP:PROXY_PORT", auth);
+/// let proxy = Proxy::new_with_auth("PROXY_IP:PROXY_PORT", ProxyType::Socks5, auth);
+///
+/// // Пример SOCKS4 с авторизацией
+/// let auth = ProxyAuth::new("USER_ID", ""); // В SOCKS4 не используется пароль
+/// let proxy = Proxy::new_with_auth("PROXY_IP:PROXY_PORT", ProxyType::Socks4, auth);
 /// ```
 #[derive(Debug, Clone)]
 pub struct Proxy {
+  proxy_type: ProxyType,
   proxy_address: String,
   target: Arc<RwLock<TargetServer>>,
   timeout: u64,
   auth: Option<ProxyAuth>,
+}
+
+/// Тип прокси
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProxyType {
+  Socks5,
+  Socks4,
 }
 
 /// Структура адреса целевого сервера
@@ -52,11 +58,72 @@ impl Default for TargetServer {
   }
 }
 
+/// Вспомогательная функция записи данных в поток
+async fn write_all_to(stream: &mut TcpStream, buffer: Vec<u8>) -> ProxyResult<()> {
+  match timeout(Duration::from_secs(10), stream.write_all(&buffer)).await {
+    Ok(result) => match result {
+      Ok(_) => ProxyResult::Ok(()),
+      Err(e) => ProxyResult::Err(ProxyError::new(ErrorName::StreamError, e.to_string())),
+    },
+    Err(_) => ProxyResult::Err(ProxyError::new(ErrorName::StreamError, "failed to write buffer to stream")),
+  }
+}
+
+/// Вспомогательная функция чтения данных из потока
+async fn read_exact_from<'a>(stream: &mut TcpStream, buffer: &'a mut [u8]) -> ProxyResult<()> {
+  match timeout(Duration::from_secs(10), stream.read_exact(buffer)).await {
+    Ok(result) => match result {
+      Ok(_) => ProxyResult::Ok(()),
+      Err(e) => ProxyResult::Err(ProxyError::new(ErrorName::StreamError, e.to_string())),
+    },
+    Err(_) => ProxyResult::Err(ProxyError::new(ErrorName::StreamError, "failed to read buffer from stream")),
+  }
+}
+
+impl From<String> for Proxy {
+  fn from(value: String) -> Self {
+    let split = value.split("://").collect::<Vec<&str>>();
+    let (protocol, proxy) = (split.get(0).unwrap_or(&"socks5"), split.get(1).unwrap_or(&"127.0.0.1"));
+
+    Self {
+      proxy_address: (*proxy).to_string(),
+      proxy_type: match *protocol {
+        "socks5" => ProxyType::Socks5,
+        "socks4" => ProxyType::Socks4,
+        _ => ProxyType::Socks5,
+      },
+      target: Arc::new(RwLock::new(TargetServer::default())),
+      timeout: 20000,
+      auth: None,
+    }
+  }
+}
+
+impl From<&str> for Proxy {
+  fn from(value: &str) -> Self {
+    let split = value.split("://").collect::<Vec<&str>>();
+    let (protocol, proxy) = (split.get(0).unwrap_or(&"socks5"), split.get(1).unwrap_or(&"127.0.0.1"));
+
+    Self {
+      proxy_address: (*proxy).to_string(),
+      proxy_type: match *protocol {
+        "socks5" => ProxyType::Socks5,
+        "socks4" => ProxyType::Socks4,
+        _ => ProxyType::Socks5,
+      },
+      target: Arc::new(RwLock::new(TargetServer::default())),
+      timeout: 20000,
+      auth: None,
+    }
+  }
+}
+
 impl Proxy {
   /// Метод создания нового прокси
-  pub fn new(proxy_address: impl Into<String>) -> Self {
+  pub fn new(proxy_address: impl Into<String>, proxy_type: ProxyType) -> Self {
     Self {
       proxy_address: proxy_address.into(),
+      proxy_type: proxy_type,
       target: Arc::new(RwLock::new(TargetServer::default())),
       timeout: 20000,
       auth: None,
@@ -64,9 +131,10 @@ impl Proxy {
   }
 
   /// Метод создания нового прокси с авторизацией
-  pub fn new_with_auth(proxy_address: impl Into<String>, auth: ProxyAuth) -> Self {
+  pub fn new_with_auth(proxy_address: impl Into<String>, proxy_type: ProxyType, auth: ProxyAuth) -> Self {
     Self {
       proxy_address: proxy_address.into(),
+      proxy_type: proxy_type,
       target: Arc::new(RwLock::new(TargetServer::default())),
       timeout: 20000,
       auth: Some(auth),
@@ -90,6 +158,12 @@ impl Proxy {
     self
   }
 
+  /// Метод установки типа прокси
+  pub fn set_proxy_type(mut self, proxy_type: ProxyType) -> Self {
+    self.proxy_type = proxy_type;
+    self
+  }
+
   /// Метод попытки создания соединения с прокси
   pub async fn is_available(&self) -> bool {
     match timeout(Duration::from_millis(self.timeout), TcpStream::connect(&self.proxy_address)).await {
@@ -110,17 +184,17 @@ impl Proxy {
     }
   }
 
-  /// Метод создания подключения с SOCKS5 прокси
+  /// Метод подключения к прокси
   pub async fn connect(&self) -> ProxyResult<TcpStream> {
     let (target_host, target_port) = {
       let guard = self.target.read().await;
 
       let Some(host) = guard.host.clone() else {
-        return ProxyResult::Failed(ProxyError::new(ErrorName::InvalidData, "target server host not specified"));
+        return ProxyResult::Err(ProxyError::new(ErrorName::InvalidData, "target server host not specified"));
       };
 
       let Some(port) = guard.port else {
-        return ProxyResult::Failed(ProxyError::new(ErrorName::InvalidData, "target server port not specified"));
+        return ProxyResult::Err(ProxyError::new(ErrorName::InvalidData, "target server port not specified"));
       };
 
       (host, port)
@@ -129,132 +203,183 @@ impl Proxy {
     let mut stream = match timeout(Duration::from_millis(self.timeout), TcpStream::connect(&self.proxy_address)).await {
       Ok(result) => match result {
         Ok(s) => s,
-        Err(_) => return ProxyResult::Failed(ProxyError::new(ErrorName::NotConnected, "could not connect to specified server")),
+        Err(_) => return ProxyResult::Err(ProxyError::new(ErrorName::NotConnected, "could not connect to specified server")),
       },
-      Err(_) => return ProxyResult::Failed(ProxyError::new(ErrorName::Timeout, "failed to connect to server within specified time")),
+      Err(_) => return ProxyResult::Err(ProxyError::new(ErrorName::Timeout, "failed to connect to server within specified time")),
     };
 
-    let mut greet = vec![PROXY_VERSION, if self.auth.is_some() { 2 } else { 1 }, 0x00];
-
-    if self.auth.is_some() {
-      greet = vec![PROXY_VERSION, 2, 0x00, 0x02];
+    match self.proxy_type {
+      ProxyType::Socks5 => self.connect_socks5(&mut stream, target_host, target_port).await?,
+      ProxyType::Socks4 => self.connect_socks4(&mut stream, target_host, target_port).await?,
     }
 
-    stream.write_all(&greet).await.err();
+    ProxyResult::Ok(stream)
+  }
 
-    let mut resp = [0u8; 2];
-    stream.read_exact(&mut resp).await.err();
+  /// Метод создания подключения с SOCKS5 прокси
+  async fn connect_socks5(&self, stream: &mut TcpStream, target_host: String, target_port: u16) -> ProxyResult<()> {
+    let greet = if self.auth.is_some() { vec![0x05, 0x02, 0x00, 0x02] } else { vec![0x05, 0x01, 0x00] };
 
-    if resp[0] != PROXY_VERSION {
-      return ProxyResult::Failed(ProxyError::new(ErrorName::InvalidVersion, "incompatible proxy version"));
+    write_all_to(stream, greet).await?;
+
+    let mut response = [0u8; 2];
+
+    read_exact_from(stream, &mut response).await?;
+
+    if response[0] != 0x05 {
+      return ProxyResult::Err(ProxyError::new(ErrorName::InvalidVersion, "invalid response version"));
     }
 
-    match resp[1] {
+    match response[1] {
       0x00 => {}
       0x02 => {
         if let Some(auth) = &self.auth {
-          self.authorize(&mut stream, auth).await.err();
+          let username = auth.username();
+          let password = auth.password();
+
+          if username.len() > 255 || password.len() > 255 {
+            return Err(ProxyError::new(ErrorName::InvalidData, "username or password is too long"));
+          }
+
+          let mut buffer = BytesMut::with_capacity(2 + username.len() + password.len());
+          buffer.put_u8(0x01);
+          buffer.put_u8(username.len() as u8);
+          buffer.put_slice(username.as_bytes());
+          buffer.put_u8(password.len() as u8);
+          buffer.put_slice(password.as_bytes());
+
+          write_all_to(stream, buffer.into()).await?;
+
+          let mut resp = [0u8; 2];
+
+          read_exact_from(stream, &mut resp).await?;
+
+          if resp[0] != 0x01 {
+            return Err(ProxyError::new(ErrorName::AuthFailed, "invalid authorization version"));
+          }
+
+          if resp[1] != 0x00 {
+            return Err(ProxyError::new(ErrorName::AuthFailed, "authorization failed (possibly incorrect password or username)"));
+          }
         } else {
-          return ProxyResult::Failed(ProxyError::new(ErrorName::AuthFailed, "proxy requires authorization (username, password)"));
+          return ProxyResult::Err(ProxyError::new(ErrorName::AuthFailed, "proxy requires authorization (username, password)"));
         }
       }
-      _ => return ProxyResult::Failed(ProxyError::new(ErrorName::Unsupported, "unsupported authorization method")),
+      _ => return ProxyResult::Err(ProxyError::new(ErrorName::Unsupported, "unsupported authorization method")),
     }
 
-    let mut req = BytesMut::with_capacity(512);
-    req.put_u8(PROXY_VERSION);
-    req.put_u8(CMD_CONNECT);
-    req.put_u8(0x00);
+    let mut request = BytesMut::with_capacity(512);
+    request.put_u8(0x05);
+    request.put_u8(0x01);
+    request.put_u8(0x00);
 
     if let Ok(ipv4) = target_host.parse::<std::net::Ipv4Addr>() {
-      req.put_u8(ATYP_IPV4);
-      req.put_slice(&ipv4.octets());
+      request.put_u8(0x01);
+      request.put_slice(&ipv4.octets());
     } else if let Ok(ipv6) = target_host.parse::<std::net::Ipv6Addr>() {
-      req.put_u8(ATYP_IPV6);
-      req.put_slice(&ipv6.octets());
+      request.put_u8(0x04);
+      request.put_slice(&ipv6.octets());
     } else {
-      req.put_u8(ATYP_DOMAIN);
+      request.put_u8(0x03);
       let host_bytes = target_host.as_bytes();
 
       if host_bytes.len() > 255 {
-        return ProxyResult::Failed(ProxyError::new(ErrorName::InvalidData, "target host is too long"));
+        return ProxyResult::Err(ProxyError::new(ErrorName::InvalidData, "target host is too long"));
       }
 
-      req.put_u8(host_bytes.len() as u8);
-      req.put_slice(host_bytes);
+      request.put_u8(host_bytes.len() as u8);
+      request.put_slice(host_bytes);
     }
 
-    req.put_u16(target_port);
+    request.put_u16(target_port);
 
-    stream.write_all(&req).await.err();
+    write_all_to(stream, request.into()).await?;
 
     let mut header = [0u8; 4];
-    stream.read_exact(&mut header).await.err();
 
-    if header[0] != PROXY_VERSION {
-      return ProxyResult::Failed(ProxyError::new(ErrorName::InvalidVersion, "incompatible proxy version"));
+    read_exact_from(stream, &mut header).await?;
+
+    if header[0] != 0x05 {
+      return ProxyResult::Err(ProxyError::new(ErrorName::InvalidVersion, "invalid response version"));
     }
 
     let rep = header[1];
 
     if rep != 0x00 {
-      return ProxyResult::Failed(ProxyError::new(ErrorName::NotConnected, format!("proxy connection error (rep: 0x{:02x})", rep)));
+      return ProxyResult::Err(ProxyError::new(ErrorName::NotConnected, format!("proxy connection error (rep: 0x{:02x})", rep)));
     }
 
     let atyp = header[3];
 
     match atyp {
-      ATYP_IPV4 => {
+      0x01 => {
         let mut addr = [0u8; 4 + 2];
-        stream.read_exact(&mut addr).await.err();
+        read_exact_from(stream, &mut addr).await?;
       }
-      ATYP_IPV6 => {
+      0x04 => {
         let mut addr = [0u8; 16 + 2];
-        stream.read_exact(&mut addr).await.err();
+        read_exact_from(stream, &mut addr).await?;
       }
-      ATYP_DOMAIN => {
+      0x03 => {
         let mut len = [0u8; 1];
-        stream.read_exact(&mut len).await.err();
+        read_exact_from(stream, &mut len).await?;
         let mut rest = vec![0u8; len[0] as usize + 2];
-        stream.read_exact(&mut rest).await.err();
+        read_exact_from(stream, &mut rest).await?;
       }
-      _ => return ProxyResult::Failed(ProxyError::new(ErrorName::InvalidData, format!("unknown ATYP in reply: 0x{:02x}", atyp))),
+      _ => return ProxyResult::Err(ProxyError::new(ErrorName::InvalidData, format!("unknown address type in reply: 0x{:02x}", atyp))),
     }
 
-    ProxyResult::Success(stream)
+    ProxyResult::Ok(())
   }
 
-  /// Метод выполнения авторизации
-  async fn authorize(&self, stream: &mut TcpStream, auth: &ProxyAuth) -> Result<(), ProxyError> {
-    let username = auth.username();
-    let password = auth.password();
+  /// Метод создания подключения с SOCKS4 прокси
+  async fn connect_socks4(&self, stream: &mut TcpStream, target_host: String, target_port: u16) -> ProxyResult<()> {
+    let mut request = BytesMut::with_capacity(512);
+    request.put_u8(0x04);
+    request.put_u8(0x01);
+    request.put_u16(target_port);
 
-    if username.len() > 255 || password.len() > 255 {
-      return Err(ProxyError::new(ErrorName::InvalidData, "username or password is too long"));
+    if let Ok(ipv4) = target_host.parse::<std::net::Ipv4Addr>() {
+      request.put_slice(&ipv4.octets());
+
+      if let Some(auth) = &self.auth {
+        request.put_slice(auth.username().as_bytes());
+      } else {
+        request.put_u8(0x00);
+      }
+    } else {
+      request.put_slice(&[0x00, 0x00, 0x00, 0x01]);
+
+      if let Some(auth) = &self.auth {
+        request.put_slice(auth.username().as_bytes());
+      } else {
+        request.put_u8(0x00);
+      }
+
+      if target_host.len() > 255 {
+        return Err(ProxyError::new(ErrorName::InvalidData, "target host is too long"));
+      }
+
+      request.put_slice(target_host.as_bytes());
+      request.put_u8(0x00);
     }
 
-    let mut buf = BytesMut::with_capacity(2 + username.len() + password.len());
-    buf.put_u8(0x01); // 0x02 может быть
-    buf.put_u8(username.len() as u8);
-    buf.put_slice(username.as_bytes());
-    buf.put_u8(password.len() as u8);
-    buf.put_slice(password.as_bytes());
+    write_all_to(stream, request.into()).await?;
 
-    stream.write_all(&buf).await?;
+    let mut response = [0u8; 8];
+    read_exact_from(stream, &mut response).await?;
 
-    let mut resp = [0u8; 2];
-
-    stream.read_exact(&mut resp).await?;
-
-    if resp[0] != 0x01 {
-      return Err(ProxyError::new(ErrorName::AuthFailed, "invalid authorization version"));
+    if response[0] != 0x00 {
+      return Err(ProxyError::new(ErrorName::InvalidVersion, "invalid response version"));
     }
 
-    if resp[1] != 0x00 {
-      return Err(ProxyError::new(ErrorName::AuthFailed, "authorization failed (possibly incorrect password or username)"));
+    match response[1] {
+      0x5a => Ok(()),
+      0x5b => Err(ProxyError::new(ErrorName::NotConnected, "request rejected or failed")),
+      0x5c => Err(ProxyError::new(ErrorName::AuthFailed, "client not identd-authenticated")),
+      0x5d => Err(ProxyError::new(ErrorName::AuthFailed, "client identd-user mismatch")),
+      _ => Err(ProxyError::new(ErrorName::Unsupported, format!("unknown response code 0x{:02x}", response[1]))),
     }
-
-    Ok(())
   }
 }
 
@@ -264,17 +389,37 @@ mod tests {
 
   use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-  use crate::Proxy;
   use crate::result::ProxyResult;
+  use crate::{Proxy, ProxyType};
 
   #[tokio::test]
-  async fn test_proxy_connect() -> std::io::Result<()> {
-    let proxy = Proxy::new("212.58.132.5:1080"); // Это публичный прокси
+  async fn test_socks5_proxy() -> std::io::Result<()> {
+    let proxy = Proxy::new("212.58.132.5:1080", ProxyType::Socks5);
     proxy.bind("ipinfo.io".to_string(), 80);
 
     let mut conn = match proxy.connect().await {
-      ProxyResult::Success(s) => s,
-      ProxyResult::Failed(e) => return Err(Error::new(ErrorKind::NotConnected, e.text())),
+      ProxyResult::Ok(s) => s,
+      ProxyResult::Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.text())),
+    };
+
+    conn.write_all(b"GET / HTTP/1.0\r\nHost: ipinfo.io\r\n\r\n").await?;
+
+    let mut buf = Vec::new();
+    conn.read_to_end(&mut buf).await?;
+
+    println!("{}", String::from_utf8_lossy(&buf));
+
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn test_socks4_proxy() -> std::io::Result<()> {
+    let proxy = Proxy::new("68.71.242.118:4145", ProxyType::Socks4);
+    proxy.bind("ipinfo.io".to_string(), 80);
+
+    let mut conn = match proxy.connect().await {
+      ProxyResult::Ok(s) => s,
+      ProxyResult::Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.text())),
     };
 
     conn.write_all(b"GET / HTTP/1.0\r\nHost: ipinfo.io\r\n\r\n").await?;

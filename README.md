@@ -22,7 +22,7 @@ All crates focus on:
 - [x] Swarm architecture
 - [x] Cluster architecture
 - [x] Connecting to servers
-- [ ] SOCKS4 proxy support
+- [x] SOCKS4 proxy support
 - [x] SOCKS5 proxy support
 - [ ] HTTP(S) proxy support
 - [x] Login processing
@@ -49,7 +49,7 @@ All crates focus on:
 - [nurtex-derive](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-derive): A crate for convenient parsing of network packets.
 - [nurtex-encrypt](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-encrypt): A crate containing the Minecraft TCP-connection encryption.
 - [nurtex-protocol](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-protocol): A crate for creating Minecraft TCP-connections and working with packets.
-- [nurtex-proxy](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-proxy): A crate for creating connections via SOCKS5 proxy.
+- [nurtex-proxy](https://github.com/NurtexMC/nurtex/tree/main/crates/nurtex-proxy): A crate for creating connections via SOCKS5 / SOCKS4 proxy.
 
 
 # Documentation

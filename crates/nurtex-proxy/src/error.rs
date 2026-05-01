@@ -7,6 +7,7 @@ pub enum ErrorName {
   InvalidVersion,
   AuthFailed,
   Unsupported,
+  StreamError,
   UnknownError,
 }
 

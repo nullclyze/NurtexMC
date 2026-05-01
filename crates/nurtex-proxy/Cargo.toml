@@ -1,13 +1,13 @@
 [package]
 name = "nurtex-proxy"
-description = "Library for creating connections via SOCKS5 proxy."
+description = "Library for creating connections via SOCKS5 / SOCKS4 proxy."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/nurtex-proxy/latest/"
 readme = "README.md"
-keywords = ["proxy", "socks5"]
+keywords = ["proxy", "socks5", "socks4"]
 categories = ["asynchronous"]
 
 [lib]

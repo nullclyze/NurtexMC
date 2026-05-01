@@ -81,7 +81,7 @@ impl Bot {
     Self::create_with_options(username, 45, 45, None, None)
   }
 
-  /// Метод создания нового бота
+  /// Метод создания нового бота с прокси
   pub fn create_with_proxy(username: impl Into<String>, proxy: Proxy) -> Self {
     Self::create_with_options(username, 45, 45, None, Some(proxy))
   }
@@ -201,7 +201,7 @@ impl Bot {
     self
   }
 
-  /// Метод установки SOCKS5 прокси
+  /// Метод установки прокси
   pub fn set_proxy(mut self, proxy: Proxy) -> Self {
     self.proxy = Arc::new(RwLock::new(Some(proxy)));
     self
@@ -851,7 +851,7 @@ mod tests {
 
   use crate::protocol::connection::ClientsidePacket;
   use crate::protocol::packets::play::ClientsidePlayPacket;
-  use nurtex_proxy::Proxy;
+  use crate::proxy::Proxy;
 
   use crate::bot::plugins::{AutoReconnectPlugin, AutoRespawnPlugin, BotPlugins};
   use crate::bot::{Bot, BotChatExt};
@@ -939,9 +939,25 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn test_bot_with_proxy() -> io::Result<()> {
-    let proxy = Proxy::new("212.58.132.5:1080"); // Публичный прокси
+  async fn test_bot_with_socks5_proxy() -> io::Result<()> {
+    let proxy = Proxy::from("socks5://212.58.132.5:1080");
     let mut bot = Bot::create_with_proxy("l7jqw8d5", proxy);
+
+    bot.connect("hub.holyworld.ru", 25565);
+
+    let mut reader = bot.subscribe_to_reader();
+
+    loop {
+      if let Ok(ClientsidePacket::Play(packet)) = reader.recv().await {
+        println!("Бот {} получил пакет: {:?}", bot.username(), packet);
+      }
+    }
+  }
+
+  #[tokio::test]
+  async fn test_bot_with_socks4_proxy() -> io::Result<()> {
+    let proxy = Proxy::from("socks4://68.71.242.118:4145");
+    let mut bot = Bot::create_with_proxy("k72ido3d", proxy);
 
     bot.connect("hub.holyworld.ru", 25565);
 

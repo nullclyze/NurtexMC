@@ -83,8 +83,8 @@ impl ProxyChecker for Proxy {
     self.bind("ipinfo.io".to_string(), 80);
 
     let mut stream = match self.connect().await {
-      ProxyResult::Success(s) => s,
-      ProxyResult::Failed(_) => return None,
+      ProxyResult::Ok(s) => s,
+      ProxyResult::Err(_) => return None,
     };
 
     let _ = stream.write_all(b"GET / HTTP/1.0\r\nHost: ipinfo.io\r\n\r\n").await;
@@ -120,11 +120,11 @@ impl ProxyChecker for Proxy {
 
 #[cfg(test)]
 mod tests {
-  use crate::{Proxy, ProxyChecker};
+  use crate::{Proxy, ProxyChecker, ProxyType};
 
   #[tokio::test]
   async fn test_proxy_check() {
-    let proxy = Proxy::new("98.175.31.222:4145");
+    let proxy = Proxy::new("98.175.31.222:4145", ProxyType::Socks5);
 
     if proxy.check_proxy().await {
       println!("Доступен");
@@ -135,7 +135,7 @@ mod tests {
 
   #[tokio::test]
   async fn test_get_ip_info() {
-    let proxy = Proxy::new("98.175.31.222:4145");
+    let proxy = Proxy::new("98.175.31.222:4145", ProxyType::Socks5);
     println!("Информация об IP: {:?}", proxy.get_ip_info().await);
   }
 }

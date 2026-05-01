@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use nurtex::bot::{Bot, BotChatExt};
 use nurtex::proxy::Proxy;
+use nurtex_proxy::ProxyType;
 
-/// Адрес SOCKS5 прокси, например `164.85.71.8:2749`
+/// Адрес SOCKS5 прокси, например `164.85.71.8:1080`
 const PROXY_ADDRESS: &str = "YOUR_SOCKS5_PROXY";
 
 /// Хост **публичного** сервера, например `mc.server.com`
@@ -11,8 +12,8 @@ const SERVER_HOST: &str = "PUBLIC_HOST";
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-  // Создаём бота с прокси
-  let proxy = Proxy::new(PROXY_ADDRESS);
+  // Создаём бота с SOCKS5 прокси
+  let proxy = Proxy::new(PROXY_ADDRESS, ProxyType::Socks5);
   let mut bot = Bot::create_with_proxy("nurtex_bot", proxy);
 
   // Подключаем бота к публичному серверу

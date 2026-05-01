@@ -252,13 +252,13 @@ impl NurtexConnection {
     Self::new_from_stream(stream).await
   }
 
-  /// Метод создания нового подключения с SOCKS5 прокси
+  /// Метод создания нового подключения с прокси
   pub async fn new_with_proxy(server_host: impl Into<String>, server_port: u16, proxy: &Proxy) -> io::Result<Self> {
     proxy.bind(server_host.into(), server_port);
 
     let stream = match proxy.connect().await {
-      ProxyResult::Success(s) => s,
-      ProxyResult::Failed(e) => return Err(Error::new(ErrorKind::NotConnected, e.text())),
+      ProxyResult::Ok(s) => s,
+      ProxyResult::Err(e) => return Err(Error::new(ErrorKind::NotConnected, e.text())),
     };
 
     stream.set_nodelay(true)?;
