@@ -22,9 +22,11 @@ All crates focus on:
 - [x] Swarm architecture
 - [x] Cluster architecture
 - [x] Connecting to servers
+- [x] Encryption
 - [x] SOCKS4 proxy support
 - [x] SOCKS5 proxy support
 - [ ] HTTP(S) proxy support
+- [x] Built-in proxy checker
 - [x] Login processing
 - [x] Configuration processing
 - [ ] Play processing (a partial implementation already exists)
@@ -32,6 +34,7 @@ All crates focus on:
 - [ ] Implementation of physics
 - [ ] Interaction with inventory
 - [ ] Interaction with entities
+- [x] Creating custom handlers
 - [ ] Storing world data (a small part implemented)
 - [x] Flexible settings (relative to the current position)
 - [ ] NBT parsing
