@@ -110,7 +110,7 @@ async fn main() {
   // Создаём рой и запускаем его на сервер
   Swarm::create()
     .with_bots(bots)
-    .set_join_delay(JoinDelay::fixed(500))
+    .with_join_delay(JoinDelay::fixed(500))
     .bind("localhost", 25565)
     .launch_and_wait()
     .await
@@ -123,34 +123,27 @@ async fn main() {
 Here you can see a minimal example of creating a cluster.
 
 ```rust
-use nurtex::{Bot, Cluster, JoinDelay, Swarm};
+use nurtex::{Bot, Cluster, JoinDelay};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-  // Создаём список роев
-  let mut swarms = Vec::new();
+  // Создаём кластер
+  let mut cluster = Cluster::create();
 
-  // Создаём цикл на 3 повторения
   for s_ind in 0..3 {
-    // Создаём рой
-    let mut swarm = Swarm::create()
-      .set_join_delay(JoinDelay::fixed(1000))
-      .bind("localhost", 25565);
+    // Создаём список ботов
+    let mut bots = Vec::new();
 
-    // Создаём цикл на 2 повторения
     for b_ind in 0..2 {
-      // Создаём бота и добавляем его в рой
-      swarm.add_bot(Bot::create(format!("nurtex_{}_{}", s_ind, b_ind)));
+      // Создаём бота и добавляем его в список
+      bots.push(Bot::create(format!("nurtex_{}_{}", s_ind, b_ind)));
     }
 
-    // Добавляем рой в список
-    swarms.push(swarm);
+    // Добавляем рой в кластер
+    cluster.add_swarm(bots, JoinDelay::fixed(1000), "localhost", 25565);
   }
 
-  // Создаём кластер и сразу запускаем его
-  Cluster::create()
-    .with_swarms(swarms)
-    .launch_and_wait()
-    .await
+  // Запускаем кластер и ожидаем завершения всех хэндлов
+  cluster.launch_and_wait().await
 }
 ```
