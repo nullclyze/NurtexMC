@@ -105,7 +105,7 @@ use nurtex::{Bot, JoinDelay, Swarm};
 async fn main() -> std::io::Result<()> {
   // Создаём наш рой
   let mut swarm = Swarm::create()
-    .set_join_delay(JoinDelay::fixed(500))
+    .with_join_delay(JoinDelay::fixed(500))
     .bind("localhost", 25565);
 
   // Создаём 5 ботов и добавляем их в рой
@@ -142,13 +142,13 @@ async fn main() -> std::io::Result<()> {
 
 ```rust
 use nurtex::Bot;
-use nurtex::bot::plugins::{AutoReconnectPlugin, BotPlugins};
+use nurtex::bot::plugins::{AutoReconnectPlugin, Plugins};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
   // Создаём нашего бота с плагином `AutoReconnect`
   let mut bot = Bot::create("nurtex_bot")
-    .set_plugins(BotPlugins {
+    .with_plugins(Plugins {
       auto_reconnect: AutoReconnectPlugin {
         enabled: true, // Включаем плагин,
         reconnect_delay: 2000, // Задержка переподключения в мс

@@ -141,13 +141,13 @@ Let's look at an example of using the `AutoReconnect` plugin:
 
 ```rust
 use nurtex::Bot;
-use nurtex::bot::plugins::{AutoReconnectPlugin, BotPlugins};
+use nurtex::bot::plugins::{AutoReconnectPlugin, Plugins};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
   // Create our bot with the `AutoReconnect` plugin
   let mut bot = Bot::create("nurtex_bot")
-    .set_plugins(BotPlugins {
+    .with_plugins(Plugins {
       auto_reconnect: AutoReconnectPlugin {
         enabled: true, // Enable the plugin,
         reconnect_delay: 2000, // Reconnection delay in ms
