@@ -1,4 +1,4 @@
-use std::io::{Error, ErrorKind};
+use std::io::ErrorKind;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,33 +7,18 @@ use tokio::sync::{RwLock, broadcast};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
-use crate::bot::capture::{capture_components, capture_connection};
-use crate::bot::handlers::{ChatPayload, DisconnectPayload, Handlers};
+use crate::bot::connection::spawn_connection;
+use crate::bot::handlers::{Handlers};
 use crate::bot::plugins::Plugins;
+use crate::bot::types::{Connection, PacketReader, PacketWriter};
 use crate::bot::{BotComponents, BotProfile, ClientInfo};
-use crate::protocol::connection::utils::handle_encryption_request;
-use crate::protocol::connection::{ClientsidePacket, ConnectionState, NurtexConnection};
-use crate::protocol::packets::play::{ClientsidePlayPacket, ServersideAcceptTeleportation, ServersideClientCommand};
-use crate::protocol::packets::{
-  configuration::{ClientsideConfigurationPacket, ServersideAcknowledgeFinishConfiguration, ServersideConfigurationPacket, ServersideKnownPacks},
-  handshake::{ServersideGreet, ServersideHandshakePacket},
-  login::{ClientsideLoginPacket, ServersideLoginAcknowledged, ServersideLoginPacket, ServersideLoginStart},
-  play::ServersidePlayPacket,
-};
-use crate::protocol::types::{ClientCommand, ClientIntention, ResourcePackState, Rotation, Vector3};
+use crate::protocol::connection::{ClientsidePacket, NurtexConnection};
+use crate::protocol::packets::play::ServersidePlayPacket;
+use crate::protocol::types::{Rotation, Vector3};
 use crate::proxy::Proxy;
 use crate::storage::Storage;
 use crate::swarm::Speedometer;
 use crate::world::Entity;
-
-/// Тип потокобезопасного подключения
-pub type BotConnection = Arc<RwLock<Option<NurtexConnection>>>;
-
-/// Тип потокобезопасного `reader`
-pub type PacketReader = Arc<broadcast::Sender<ClientsidePacket>>;
-
-/// Тип потокобезопасного `writer`
-pub type PacketWriter = Arc<broadcast::Sender<ServersidePlayPacket>>;
 
 /// Структура Minecraft бота
 ///
@@ -63,7 +48,7 @@ pub type PacketWriter = Arc<broadcast::Sender<ServersidePlayPacket>>;
 /// Больше актуальных примеров: [смотреть](https://github.com/NurtexMC/nurtex/blob/main/crates/nurtex/examples)
 pub struct Bot {
   pub profile: Arc<RwLock<BotProfile>>,
-  pub connection: BotConnection,
+  pub connection: Connection,
   handle: Option<JoinHandle<core::result::Result<(), std::io::Error>>>,
   username: String,
   protocol_version: i32,
@@ -121,7 +106,7 @@ impl Bot {
   }
 
   /// Метод запуска `reader` (выполняется автоматически при подключении бота)
-  pub fn run_reader(connection: BotConnection, reader_tx: PacketReader) -> JoinHandle<()> {
+  pub fn run_reader(connection: Connection, reader_tx: PacketReader) -> JoinHandle<()> {
     tokio::spawn(async move {
       // Может быть гонка условий с NurtexConnection, поэтому небольшая задержка нужна
       tokio::time::sleep(Duration::from_millis(500)).await;
@@ -156,7 +141,7 @@ impl Bot {
   }
 
   /// Метод запуска `writer` (выполняется автоматически при подключении бота)
-  pub fn run_writer(connection: BotConnection, writer_tx: PacketWriter) -> JoinHandle<()> {
+  pub fn run_writer(connection: Connection, writer_tx: PacketWriter) -> JoinHandle<()> {
     let mut writer_rx = writer_tx.subscribe();
 
     tokio::spawn(async move {
@@ -276,7 +261,7 @@ impl Bot {
   }
 
   /// Метод получения копии подключения
-  pub fn get_connection(&self) -> BotConnection {
+  pub fn get_connection(&self) -> Connection {
     Arc::clone(&self.connection)
   }
 
@@ -317,20 +302,20 @@ impl Bot {
     self.handle = Some(self.connect_with_handle(server_host, server_port));
   }
 
-  /// Метод подключения бота к серверу, который возвращает хэндл бота
-  pub fn connect_with_handle(&self, server_host: impl Into<String>, server_port: u16) -> JoinHandle<core::result::Result<(), std::io::Error>> {
+  /// Метод подключения бота к серверу, возвращающий хэндл подключения
+  pub fn connect_with_handle(&self, server_host: impl Into<String>, server_port: u16) -> JoinHandle<Result<(), std::io::Error>> {
     let connection = Arc::clone(&self.connection);
     let profile = Arc::clone(&self.profile);
     let components = Arc::clone(&self.components);
     let speedometer = self.speedometer.clone();
-    let plugins = self.plugins.clone();
-    let coonnection_timeout = self.connection_timeout;
+    let plugins = Arc::clone(&self.plugins);
     let proxy = Arc::clone(&self.proxy);
     let reader_tx = Arc::clone(&self.reader_tx);
     let writer_tx = Arc::clone(&self.writer_tx);
     let storage = Arc::clone(&self.storage);
     let handlers = Arc::clone(&self.handlers);
     let protocol_version = self.protocol_version;
+    let coonnection_timeout = self.connection_timeout;
     let host = server_host.into();
     let port = server_port;
 
@@ -342,7 +327,7 @@ impl Bot {
         let reader_handle = Self::run_reader(Arc::clone(&connection), Arc::clone(&reader_tx));
         let writer_handle = Self::run_writer(Arc::clone(&connection), Arc::clone(&writer_tx));
 
-        let result = Self::spawn_connection(
+        let result = spawn_connection(
           &connection,
           &profile,
           &components,
@@ -382,452 +367,6 @@ impl Bot {
     })
   }
 
-  /// Метод спавна процесса подключения
-  async fn spawn_connection(
-    connection: &Arc<RwLock<Option<NurtexConnection>>>,
-    profile: &Arc<RwLock<BotProfile>>,
-    components: &Arc<RwLock<BotComponents>>,
-    speedometer: &Option<Arc<Speedometer>>,
-    plugins: &Plugins,
-    reader_tx: &PacketReader,
-    storage: &Arc<Storage>,
-    protocol_version: i32,
-    coonnection_timeout: u64,
-    proxy: &Arc<RwLock<Option<Proxy>>>,
-    host: &str,
-    port: u16,
-    handlers: &Arc<Handlers>,
-  ) -> std::io::Result<()> {
-    {
-      let mut conn_guard = connection.write().await;
-      if let Some(conn) = conn_guard.as_ref() {
-        let _ = conn.shutdown().await;
-      }
-
-      *conn_guard = None;
-    }
-
-    let conn = match proxy.read().await.as_ref() {
-      Some(proxy) => match tokio::time::timeout(Duration::from_millis(coonnection_timeout), NurtexConnection::new_with_proxy(host, port, proxy)).await {
-        Ok(result) => match result {
-          Ok(c) => c,
-          Err(err) => return Err(err),
-        },
-        Err(_) => return Err(Error::new(ErrorKind::TimedOut, "failed to receive a response from server within specified timeout")),
-      },
-      None => match tokio::time::timeout(Duration::from_millis(coonnection_timeout), NurtexConnection::new(host, port)).await {
-        Ok(result) => match result {
-          Ok(c) => c,
-          Err(err) => return Err(err),
-        },
-        Err(_) => return Err(Error::new(ErrorKind::TimedOut, "failed to receive a response from server within specified timeout")),
-      },
-    };
-
-    *connection.write().await = Some(conn);
-
-    let profile_data = { profile.read().await.clone() };
-
-    capture_connection(&connection, async |conn| {
-      conn
-        .write_handshake_packet(ServersideHandshakePacket::Greet(ServersideGreet {
-          protocol_version: protocol_version,
-          server_host: host.to_string(),
-          server_port: port,
-          intention: ClientIntention::Login,
-        }))
-        .await?;
-
-      conn.set_state(ConnectionState::Login).await;
-
-      conn
-        .write_login_packet(ServersideLoginPacket::LoginStart(ServersideLoginStart {
-          username: profile_data.username.clone(),
-          uuid: profile_data.uuid,
-        }))
-        .await
-    })
-    .await?;
-
-    loop {
-      let Some(packet) = ({
-        let conn_guard = connection.read().await;
-        if let Some(conn) = conn_guard.as_ref() { conn.read_login_packet().await } else { None }
-      }) else {
-        continue;
-      };
-
-      match packet {
-        ClientsideLoginPacket::Compression(p) => {
-          capture_connection(&connection, async |conn| {
-            conn.set_compression_threshold(p.compression_threshold).await;
-            Ok(())
-          })
-          .await?;
-        }
-        ClientsideLoginPacket::EncryptionRequest(request) => {
-          if let Some((response, secret_key)) = handle_encryption_request(&request) {
-            capture_connection(&connection, async |conn| {
-              conn.write_login_packet(ServersideLoginPacket::EncryptionResponse(response)).await?;
-              conn.set_encryption_key(secret_key).await;
-              Ok(())
-            })
-            .await?;
-          }
-        }
-        ClientsideLoginPacket::LoginSuccess(p) => {
-          if let Some(handler) = &handlers.on_login_handler {
-            let username_clone = profile_data.username.clone();
-            let handler_clone = Arc::clone(handler);
-
-            tokio::spawn(async move {
-              let _ = handler_clone(username_clone).await;
-            });
-          }
-
-          profile.write().await.uuid = p.uuid;
-
-          capture_connection(&connection, async |conn| {
-            conn.write_login_packet(ServersideLoginPacket::LoginAcknowledged(ServersideLoginAcknowledged)).await
-          })
-          .await?;
-
-          break;
-        }
-        ClientsideLoginPacket::Disconnect(_p) => {
-          if let Some(handler) = &handlers.on_disconnect_handler {
-            let username_clone = profile_data.username.clone();
-            let handler_clone = Arc::clone(handler);
-
-            tokio::spawn(async move {
-              let _ = handler_clone(username_clone, DisconnectPayload { state: ConnectionState::Login }).await;
-            });
-          }
-
-          return Err(Error::new(ErrorKind::ConnectionReset, "connection was reset by server"));
-        }
-        _ => {}
-      }
-    }
-
-    capture_connection(&connection, async |conn| {
-      conn.set_state(ConnectionState::Configuration).await;
-      conn
-        .write_configuration_packet(ServersideConfigurationPacket::ClientInformation(profile.read().await.information.to_serverside_packet()))
-        .await
-    })
-    .await?;
-
-    loop {
-      let Some(packet) = ({
-        let conn_guard = connection.read().await;
-        if let Some(conn) = conn_guard.as_ref() {
-          conn.read_configuration_packet().await
-        } else {
-          None
-        }
-      }) else {
-        continue;
-      };
-
-      match packet {
-        ClientsideConfigurationPacket::KeepAlive(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_configuration_packet(ServersideConfigurationPacket::KeepAlive(crate::protocol::packets::configuration::MultisideKeepAlive {
-                id: p.id,
-              }))
-              .await
-          })
-          .await?;
-        }
-        ClientsideConfigurationPacket::Ping(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_configuration_packet(ServersideConfigurationPacket::Pong(crate::protocol::packets::configuration::ServersidePong { id: p.id }))
-              .await
-          })
-          .await?;
-        }
-        ClientsideConfigurationPacket::KnownPacks(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_configuration_packet(ServersideConfigurationPacket::KnownPacks(ServersideKnownPacks { known_packs: p.known_packs }))
-              .await
-          })
-          .await?;
-        }
-        ClientsideConfigurationPacket::FinishConfiguration(_) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_configuration_packet(ServersideConfigurationPacket::AcknowledgeFinishConfiguration(ServersideAcknowledgeFinishConfiguration))
-              .await
-          })
-          .await?;
-
-          break;
-        }
-        ClientsideConfigurationPacket::AddResourcePack(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_configuration_packet(ServersideConfigurationPacket::ResourcePackResponse(
-                crate::protocol::packets::configuration::ServersideResourcePackResponse {
-                  uuid: p.uuid,
-                  state: ResourcePackState::Accepted,
-                },
-              ))
-              .await
-          })
-          .await?;
-        }
-        ClientsideConfigurationPacket::Disconnect(_p) => {
-          if let Some(handler) = &handlers.on_disconnect_handler {
-            let username_clone = profile_data.username.clone();
-            let handler_clone = Arc::clone(handler);
-
-            tokio::spawn(async move {
-              let _ = handler_clone(
-                username_clone,
-                DisconnectPayload {
-                  state: ConnectionState::Configuration,
-                },
-              )
-              .await;
-            });
-          }
-
-          return Err(Error::new(ErrorKind::ConnectionReset, "connection was reset by server"));
-        }
-        _ => {}
-      }
-    }
-
-    capture_connection(&connection, async |conn| {
-      conn.set_state(ConnectionState::Play).await;
-      Ok(())
-    })
-    .await?;
-
-    if let Some(speedometer) = speedometer {
-      speedometer.bot_joined(profile_data.username.clone());
-    }
-
-    if let Some(handler) = &handlers.on_spawn_handler {
-      let username_clone = profile_data.username.clone();
-      let handler_clone = Arc::clone(handler);
-
-      tokio::spawn(async move {
-        let _ = handler_clone(username_clone).await;
-      });
-    }
-
-    let mut packet_rx = {
-      let reader_tx = Arc::clone(&reader_tx);
-      reader_tx.subscribe()
-    };
-
-    loop {
-      let packet = match tokio::time::timeout(Duration::from_millis(8000), packet_rx.recv()).await {
-        Ok(Ok(ClientsidePacket::Play(play_packet))) => play_packet,
-        Ok(Ok(_)) => continue,
-        Ok(Err(broadcast::error::RecvError::Lagged(_))) => continue,
-        Ok(Err(broadcast::error::RecvError::Closed)) => return Err(Error::new(ErrorKind::ConnectionReset, "connection was reset by server")),
-        Err(_) => continue,
-      };
-
-      match packet {
-        ClientsidePlayPacket::Login(p) => {
-          capture_components(&components, async |comp| {
-            comp.entity_id = p.entity_id;
-          })
-          .await;
-
-          if plugins.auto_respawn.enabled && p.enable_respawn_screen {
-            tokio::time::sleep(Duration::from_millis(plugins.auto_respawn.respawn_delay)).await;
-
-            capture_connection(&connection, async |conn| {
-              conn
-                .write_play_packet(ServersidePlayPacket::ClientCommand(ServersideClientCommand {
-                  command: ClientCommand::PerformRespawn,
-                }))
-                .await
-            })
-            .await?;
-          }
-        }
-        ClientsidePlayPacket::SpawnEntity(p) => {
-          let entity = Entity {
-            entity_type: p.entity_type,
-            entity_uuid: p.entity_uuid,
-            position: p.position,
-            rotation: Rotation::from_angle(p.yaw_angle, p.pitch_angle),
-            velocity: p.velocity.to_vector3(),
-            ..Default::default()
-          };
-
-          storage.add_entity(p.entity_id, entity).await;
-        }
-        ClientsidePlayPacket::RemoveEntities(p) => {
-          storage
-            .capture_entities(async |entities| {
-              p.entities.iter().for_each(|entity_id| {
-                entities.remove(entity_id);
-              });
-            })
-            .await;
-        }
-        ClientsidePlayPacket::EntityPositionSync(p) => {
-          storage
-            .capture_entity(&p.entity_id, async |entity| {
-              entity.position = p.position;
-              entity.rotation = p.rotation;
-              entity.velocity = p.velocity;
-              entity.on_ground = p.on_ground;
-            })
-            .await;
-        }
-        ClientsidePlayPacket::UpdateEntityPos(p) => {
-          storage
-            .capture_entity(&p.entity_id, async |entity| {
-              // entity.position.with_delta(p.delta_x, p.delta_y, p.delta_z);
-              entity.on_ground = p.on_ground;
-            })
-            .await;
-        }
-        ClientsidePlayPacket::UpdateEntityRot(p) => {
-          storage
-            .capture_entity(&p.entity_id, async |entity| {
-              entity.rotation = Rotation::from_angle(p.yaw_angle, p.pitch_angle);
-              entity.on_ground = p.on_ground;
-            })
-            .await;
-        }
-        ClientsidePlayPacket::UpdateEntityPosRot(p) => {
-          storage
-            .capture_entity(&p.entity_id, async |entity| {
-              // entity.position.with_delta(p.delta_x, p.delta_y, p.delta_z);
-              entity.rotation = Rotation::from_angle(p.yaw_angle, p.pitch_angle);
-              entity.on_ground = p.on_ground;
-            })
-            .await;
-        }
-        ClientsidePlayPacket::SetEntityVelocity(p) => {
-          storage
-            .capture_entity(&p.entity_id, async |entity| {
-              entity.position.with_velocity(p.velocity.to_vector3());
-              entity.velocity = Vector3::from_lp_vector3(p.velocity);
-            })
-            .await;
-        }
-        ClientsidePlayPacket::KeepAlive(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_play_packet(ServersidePlayPacket::KeepAlive(crate::protocol::packets::play::MultisideKeepAlive { id: p.id }))
-              .await
-          })
-          .await?;
-        }
-        ClientsidePlayPacket::PlayerChat(p) => {
-          if let Some(handler) = &handlers.on_chat_handler {
-            let username_clone = profile_data.username.clone();
-            let handler_clone = Arc::clone(handler);
-
-            tokio::spawn(async move {
-              let _ = handler_clone(
-                username_clone,
-                ChatPayload {
-                  message: p.message,
-                  sender_uuid: p.sender_uuid,
-                },
-              )
-              .await;
-            });
-          }
-        }
-        ClientsidePlayPacket::Ping(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_play_packet(ServersidePlayPacket::Pong(crate::protocol::packets::play::ServersidePong { id: p.id }))
-              .await
-          })
-          .await?;
-        }
-        ClientsidePlayPacket::SetHealth(p) => {
-          capture_components(&components, async |comp| {
-            comp.health = p.health;
-            comp.food = p.food;
-          })
-          .await;
-        }
-        ClientsidePlayPacket::SetExperience(p) => {
-          capture_components(&components, async |comp| {
-            comp.experience = p.experience;
-          })
-          .await;
-        }
-        ClientsidePlayPacket::PlayerPosition(p) => {
-          capture_components(&components, async |comp| {
-            comp.position = p.position;
-            comp.velocity = p.velocity;
-            comp.rotation = p.rotation;
-          })
-          .await;
-
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_play_packet(ServersidePlayPacket::AcceptTeleportation(ServersideAcceptTeleportation { teleport_id: p.teleport_id }))
-              .await
-          })
-          .await?;
-        }
-        ClientsidePlayPacket::PlayerRotation(p) => {
-          capture_components(&components, async |comp| {
-            comp.rotation = Rotation::new(p.yaw, p.pitch);
-          })
-          .await;
-        }
-        ClientsidePlayPacket::AddResourcePack(p) => {
-          capture_connection(&connection, async |conn| {
-            conn
-              .write_play_packet(ServersidePlayPacket::ResourcePackResponse(crate::protocol::packets::play::ServersideResourcePackResponse {
-                uuid: p.uuid,
-                state: ResourcePackState::Accepted,
-              }))
-              .await
-          })
-          .await?;
-        }
-        ClientsidePlayPacket::PlayerCombatKill(_p) => {
-          if plugins.auto_respawn.enabled {
-            tokio::time::sleep(Duration::from_millis(plugins.auto_respawn.respawn_delay)).await;
-
-            capture_connection(&connection, async |conn| {
-              conn
-                .write_play_packet(ServersidePlayPacket::ClientCommand(ServersideClientCommand {
-                  command: ClientCommand::PerformRespawn,
-                }))
-                .await
-            })
-            .await?;
-          }
-        }
-        ClientsidePlayPacket::Disconnect(_p) => {
-          if let Some(handler) = &handlers.on_disconnect_handler {
-            let username_clone = profile_data.username.clone();
-            let handler_clone = Arc::clone(handler);
-
-            tokio::spawn(async move {
-              let _ = handler_clone(username_clone, DisconnectPayload { state: ConnectionState::Play }).await;
-            });
-          }
-
-          return Err(Error::new(ErrorKind::ConnectionReset, "connection was reset by server"));
-        }
-        _ => {}
-      }
-    }
-  }
-
   /// Метод ожидания завершения хэндла подключения
   pub async fn wait_handle(&mut self) -> std::io::Result<()> {
     if let Some(handle) = self.handle.as_mut() { handle.await? } else { Ok(()) }
@@ -852,10 +391,7 @@ impl Bot {
 
   /// Метод очистки данных бота
   pub async fn clear(&self) {
-    capture_components(&self.components, async |comp| {
-      *comp = BotComponents::default();
-    })
-    .await;
+    *self.components.write().await = BotComponents::default();
   }
 
   /// Метод отмены хэндла бота
@@ -863,6 +399,21 @@ impl Bot {
     if let Some(handle) = &self.handle {
       handle.abort();
     }
+  }
+
+  /// Метод переподключения бота
+  pub async fn reconnect(&mut self, server_host: impl Into<String>, server_port: u16, reconnect_delay: u64) -> std::io::Result<()> {
+    self.shutdown().await?;
+    tokio::time::sleep(Duration::from_millis(reconnect_delay)).await;
+    self.connect(server_host, server_port);
+    Ok(())
+  }
+
+  /// Метод переподключения бота, возвращающий хэндл подключения
+  pub async fn reconnect_with_handle(&mut self, server_host: impl Into<String>, server_port: u16, reconnect_delay: u64) -> std::io::Result<JoinHandle<Result<(), std::io::Error>>> {
+    self.shutdown().await?;
+    tokio::time::sleep(Duration::from_millis(reconnect_delay)).await;
+    Ok(self.connect_with_handle(server_host, server_port))
   }
 
   /// Метод получения компонентов бота
@@ -1092,5 +643,28 @@ mod tests {
         println!("Бот {} получил пакет: {:?}", bot.username(), packet);
       }
     }
+  }
+
+  #[tokio::test]
+  async fn test_reconnect() -> io::Result<()> {
+    let mut handlers = Handlers::new();
+
+    handlers.on_spawn(async |username| {
+      println!("Бот {} заспавнился", username);
+      Ok(())
+    });
+
+    let mut bot = Bot::create("nurtex_bot").with_handlers(handlers);
+
+    let server_host = "localhost".to_string();
+    let server_port = 25565;
+
+    bot.connect(&server_host, server_port);
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    bot.reconnect(&server_host, server_port, 1000).await?;
+
+    bot.wait_handle().await
   }
 }
